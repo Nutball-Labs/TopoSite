@@ -123,8 +123,59 @@ Decided 2026-10-06:
   (weak or one-way links, nodes with too few neighbors, dead/isolated nodes).
 - **Node icons show power source.** Battery vs mains must be obvious at a
   glance: mains nodes are always listening and act as repeaters; battery nodes
-  sleep and don't route (FLiRS locks etc. sit in between). This determines what
-  each node contributes to the mesh.
+  sleep and don't route. This determines what each node contributes to the mesh.
+- **Z-Wave map follows Z-Wave JS UI's visual language** (see below) so users
+  of both tools read the same symbols the same way.
+
+### Z-Wave visual language (from Z-Wave JS UI)
+
+Taken from Z-Wave JS UI's mesh graph, `src/components/custom/ZwaveGraph.vue`
+(checked 2026-10-06). Keep these mappings unless there's a reason to diverge.
+
+**Node shape = role / power**
+
+| Shape | Meaning | Z-Wave JS field |
+|---|---|---|
+| Star | Controller | controller node id |
+| Hexagon | Always listening (mains) — repeats for the mesh | `isListening == true` |
+| Square | Not always listening (battery, incl. FLiRS) | `isListening == false` |
+
+**Node color = hops to controller (via last working route)**
+
+| Color | Meaning |
+|---|---|
+| `#7e57c2` purple | Controller |
+| `#00BCD4` cyan | Direct (1 hop) |
+| `#2DCC70` green | 2 hops |
+| `#F1C40F` yellow | 3 hops |
+| `#E77E23` orange | 4 hops |
+| `#8b0000` dark red | Failed or dead node (label prefixed `FAILED:` / `DEAD:`) |
+| `#666666` gray | Unknown (no route stats) |
+
+**Link color = data rate**
+
+| Color | Data rate |
+|---|---|
+| `#8b0000` dark red | 9.6 kbit/s |
+| `#F1C40F` yellow | 40 kbit/s |
+| `#2DCC70` green | 100 kbit/s |
+| `#3F51B5` indigo | Long Range 100 kbit/s |
+| `#666666` gray | Unknown |
+
+**Link style = route kind**
+
+| Style | Route |
+|---|---|
+| Solid, thick | Last working route (LWR) |
+| Dashed, thin | Next-to-last working route (NLWR) |
+| Solid, thick, star marker | Application (priority) route |
+| Dashed, arrow + star | Priority return route |
+| Dashed, arrow | Custom return route |
+| Short-dash, labeled "Failed ❌" | Failed hop between two nodes |
+
+Link labels show RSSI per hop where known. TopoSite extends this with its own
+mesh-health flags (weak/one-way links, too few neighbors) — choose those
+styles so they don't clash with the meanings above.
 - **check_mk dropped** — its bundled NagVis already does floor-plan maps.
 - Keep the Nutball-Labs template's docs and conventions (session commands, SN
   tracking); CMake/C++ build files dropped.

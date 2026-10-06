@@ -20,6 +20,8 @@ drag each one to its spot on the map.
 - **Mesh health at a glance** — link styling flags weak, one-way or missing links and dead or isolated nodes
 - **Battery vs mains at a glance** — Z-Wave node icons show the power source, since mains-powered
   nodes are always listening and repeat traffic for the mesh while battery nodes sleep and don't route
+- **Familiar symbols** — the Z-Wave map uses the same shapes and colors as Z-Wave JS UI's mesh view
+  (hexagon = mains, square = battery, star = controller; color = hop count; link color = data rate)
 - **Your own background** — upload a floor plan, site plan or any image
 - **Integrations** — openHAB binding and pfSense package
 
