@@ -8,7 +8,7 @@ weak or one-way links, nodes with too few neighbors, and dead or isolated nodes.
 
 It is for home-automation and small-network admins who know *what* is on their
 network but not *where* it is. TopoSite discovers devices from the network
-(ARP, DHCP leases, nmap) and from Z-Wave JS UI / openHAB, so you only have to
+(ARP, DHCP leases, nmap), from Z-Wave JS UI, from Zigbee2MQTT and from openHAB, so you only have to
 drag each one to its spot on the map.
 
 ---
@@ -17,6 +17,7 @@ drag each one to its spot on the map.
 
 - **IP device map** — discover hosts and place them on a floor plan
 - **Z-Wave mesh map** — node locations plus neighbor links from Z-Wave JS UI or openHAB
+- **Zigbee mesh map** — coordinator, routers and end devices with link quality, from Zigbee2MQTT or openHAB
 - **Mesh health at a glance** — link styling flags weak, one-way or missing links and dead or isolated nodes
 - **Battery vs mains at a glance** — Z-Wave node icons show the power source, since mains-powered
   nodes are always listening and repeat traffic for the mesh while battery nodes sleep and don't route

@@ -116,7 +116,15 @@ Decided 2026-10-06:
   background image rather than a geographic map.
 - **Discovery, not just manual entry:**
   - IP: ARP table, DHCP leases (pfSense), nmap
-  - Z-Wave: Z-Wave JS UI WebSocket API (nodes + neighbor lists) and/or openHAB REST
+  - Z-Wave: Z-Wave JS UI WebSocket API (full route/RSSI/data-rate stats) is the
+    primary source. openHAB is a fallback: the classic `zwave` binding exposes
+    `zwave_neighbours` + listening/routing flags only, and the `zwavejs` binding
+    exposes no neighbor data.
+  - Zigbee: Zigbee2MQTT `bridge/request/networkmap` (raw, with routes) over
+    MQTT — node type Coordinator/Router/EndDevice, per-link LQI, routes;
+    `power_source` from `bridge/devices`. openHAB `zigbee` binding fallback:
+    `zigbee_neighbors`, `zigbee_routes`, `zigbee_powersource`.
+    *(Added to scope 2026-10-06; visual language TBD after the first map is up.)*
 - **Integrations:** openHAB binding (Java, via `/template-openhab`) and a
   pfSense package (PHP, in `pfsense/`).
 - **Mesh health is core scope.** Neighbor-link styling must flag problems

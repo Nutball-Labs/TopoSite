@@ -7,7 +7,8 @@
 
 TopoSite is a physical mapping tool for network and Z-Wave devices. A Python
 core service (FastAPI + Leaflet web UI) discovers IP devices (ARP, DHCP
-leases, nmap) and Z-Wave nodes (Z-Wave JS UI WebSocket / openHAB). The user
+leases, nmap), Z-Wave nodes (Z-Wave JS UI WebSocket / openHAB) and Zigbee
+devices (Zigbee2MQTT network map over MQTT / openHAB). The user
 drags each device onto a floor plan or other background image. A second map
 view shows Z-Wave nodes in place with their mesh-neighbor links, styled to
 flag mesh problems (weak or one-way links, nodes with too few neighbors, dead
