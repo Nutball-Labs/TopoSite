@@ -24,9 +24,9 @@ directions are *derived* from them through per-plan and per-room transforms.
 |---|---|---|
 | **Plan** (one per floor) | `id, name, image, widthPx, heightPx, metersPerPixel, elevationM, georef?` | `metersPerPixel` set by calibration (user draws a line of known length). `elevationM` = floor height, for links between floors. |
 | **Georef** (on a plan) | `anchor {lat, lng}` for plan pixel (0,0), `rotationDeg`, plus `metersPerPixel` | Places the plan on the satellite map. Optional; absent = no satellite level. |
-| **Room** | `id, planId, name, polygon [[x,y]…], zjuiLocation?, panorama?` | Polygon in plan pixels. Edges are the room's walls. `zjuiLocation` matches Z-Wave JS UI's node `loc`, so nodes tagged "Kitchen" belong to the Kitchen room automatically. |
+| **Room** | `id, planId, name, polygon [[x,y]…], openings? [edgeIndex…], zjuiLocation?, panorama?` | Polygon in plan pixels, any size (closets, cabinets, crawlspaces too). Edges are walls unless listed in `openings` (doorless archways, not counted as walls). `zjuiLocation` matches Z-Wave JS UI's node `loc`, so nodes tagged "Kitchen" are placed into the Kitchen room by default. Once a node is placed, the room polygon containing it wins. |
 | **Panorama** (on a room) | `image, cameraX, cameraY, cameraHeightM, headingDeg` | Equirectangular 360° photo. Camera position in plan pixels; `headingDeg` = plan direction at the photo's center column. |
-| **Placement** (one per device) | `deviceKey, planId, x, y, heightM?, panoAdjust? {yawDeg, pitchDeg}` | 3D position = plan (x, y) + `heightM`. `panoAdjust` is a small per-panorama correction for when the photo and the plan disagree. |
+| **Placement** (one per device) | `deviceKey, planId, x, y, heightM?, panoAdjust? {yawDeg, pitchDeg}` | 3D position = plan (x, y) + `heightM`. Continuous coordinates: precision is the plan's pixel size (e.g. 4000 px across 20 m ≈ 5 mm). Missing `heightM` defaults by device type (outlet low, switch ~1.2 m, sensor near ceiling). `panoAdjust` is a small per-panorama correction for when the photo and the plan disagree. |
 | **deviceKey** | `zwave:<homeId>:<nodeId>` | Namespaced so Zigbee (`zigbee:<ieee>`) and IP (`ip:<mac>`) devices fit later. Node IDs get reused after exclude/include, so re-inclusion needs a "re-link this placement" step. |
 
 Stored as JSON in Z-Wave JS UI's store dir (path TBD); images alongside it.
@@ -56,6 +56,15 @@ Stored as JSON in Z-Wave JS UI's store dir (path TBD); images alongside it.
   (or double-click the room). Not an automatic zoom-threshold switch, which
   flips back and forth at the boundary. Zooming fully out of a panorama returns
   to the floor plan.
+
+### Devices in rooms without a panorama
+
+Small spaces (e.g. a Z-Wave outlet in the closet between the living room and
+the guest bedroom) won't get their own 360° photo. A panorama shows its own
+room's devices normally, **plus** devices in nearby rooms that have no
+panorama, drawn as "behind this wall" markers at their true direction
+("Closet · Z-Wave Outlet"). Their links are drawn from there. Their height can
+be adjusted from any panorama that shows them.
 
 ### Links in the panorama
 
