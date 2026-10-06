@@ -44,6 +44,7 @@ Target OS: Alma Linux 9.x (RHEL 9 based).
 
 - Python core, FastAPI REST API, Leaflet (`L.CRS.Simple`) over a background image.
 - Discovery first; manual entry is the fallback.
+- Z-Wave node icons show battery vs mains power at a glance (mains = always-listening repeater; battery = sleeps, doesn't route).
 - openHAB + pfSense integrations; check_mk dropped (NagVis covers it).
 - Name: TopoSite / `toposite` / `org.openhab.binding.toposite` / `pfSense-pkg-TopoSite`.
 

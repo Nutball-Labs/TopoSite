@@ -119,6 +119,12 @@ Decided 2026-10-06:
   - Z-Wave: Z-Wave JS UI WebSocket API (nodes + neighbor lists) and/or openHAB REST
 - **Integrations:** openHAB binding (Java, via `/template-openhab`) and a
   pfSense package (PHP, in `pfsense/`).
+- **Mesh health is core scope.** Neighbor-link styling must flag problems
+  (weak or one-way links, nodes with too few neighbors, dead/isolated nodes).
+- **Node icons show power source.** Battery vs mains must be obvious at a
+  glance: mains nodes are always listening and act as repeaters; battery nodes
+  sleep and don't route (FLiRS locks etc. sit in between). This determines what
+  each node contributes to the mesh.
 - **check_mk dropped** — its bundled NagVis already does floor-plan maps.
 - Keep the Nutball-Labs template's docs and conventions (session commands, SN
   tracking); CMake/C++ build files dropped.

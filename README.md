@@ -18,6 +18,8 @@ drag each one to its spot on the map.
 - **IP device map** — discover hosts and place them on a floor plan
 - **Z-Wave mesh map** — node locations plus neighbor links from Z-Wave JS UI or openHAB
 - **Mesh health at a glance** — link styling flags weak, one-way or missing links and dead or isolated nodes
+- **Battery vs mains at a glance** — Z-Wave node icons show the power source, since mains-powered
+  nodes are always listening and repeat traffic for the mesh while battery nodes sleep and don't route
 - **Your own background** — upload a floor plan, site plan or any image
 - **Integrations** — openHAB binding and pfSense package
 
