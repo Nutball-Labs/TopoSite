@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(git -C:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(chmod +x scripts/*.sh)",
+      "Bash(scripts/sn_audit.sh)",
+      "Bash(gh auth status 2>&1)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(python3:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)"
+    ]
+  },
+  "spinnerTipsEnabled": false
+}

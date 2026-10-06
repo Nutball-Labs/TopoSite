@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Runtime data (local floor plans, device DB)
+data/
+
+# Editor/IDE
+.vscode/
+*.swp
+*~
+
+# Misc
+sn_audit.txt
+
+# macOS metadata
+._*
+
+# NFS temp files
+.nfs*
+
+# Claude Code machine-local settings (create .claude/settings.local.json as a symlink
+# to .claude/settings.<machine>.json, or copy one as a starting point)
+.claude/settings.local.json
