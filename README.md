@@ -22,6 +22,9 @@ room needs a repeater.
   (hexagon = mains, square = battery, star = controller; color = hop count; link color = data rate)
 - **Mesh health at a glance** — link styling flags weak, one-way or missing links and dead or isolated nodes
 - **Your own background** — upload a floor plan, site plan or any image
+- **Zoom from the sky into a room** — satellite view of the property, then the floor plan, then a
+  360° photo of a single room with devices placed where they really are and links shown leaving
+  through the walls toward their neighbors (see [ROADMAP.md](ROADMAP.md))
 - **Later:** Zigbee (Zigbee2MQTT) and IP device layers on the same map, each toggled independently
 
 ---

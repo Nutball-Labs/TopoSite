@@ -56,6 +56,7 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model |
 | `public/` | Map page — Leaflet front end *(planned)* |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
+| `ROADMAP.md` | Zoom levels (satellite → floor plan → room panorama), data model, phases |
 | `scripts/sn_audit.sh` | Regenerates `sn_audit.txt` |
 | `scripts/gen_line_count.sh` | Daily line-count snapshot → `Line_Counts/` |
 
@@ -143,12 +144,21 @@ SNs, bump version, commit, and push.
   independently: **IP | Z-Wave | Zigbee** (Leaflet overlay layers). A device
   goes on the layer of the transport it talks over; MQTT devices on Wi-Fi
   (Tasmota, ESPHome) belong on the IP layer.
-- **Leaflet with `L.CRS.Simple`** places icons on a user-supplied floor plan /
-  background image rather than a geographic map. Serve Leaflet from the plugin
-  (no CDN) — many Z-Wave JS UI installs are LAN-only.
-- **Layout storage:** positions + floor-plan references as a JSON file in
-  Z-Wave JS UI's store dir, so it persists with Z-Wave JS UI's own data
-  *(path resolution TBD)*.
+- **Three zoom levels, designed in from the start** (user, 2026-10-06):
+  satellite view of the property → floor plan → 360° room panorama with
+  devices placed in it and links leaving through the walls. Built in the order
+  floor plan → panoramas → satellite. **Full design in `ROADMAP.md` — read it
+  before touching the data model or the map page.**
+- **Positions are stored in floor-plan coordinates** (plan pixels + `heightM`).
+  Satellite placement (per-plan georef) and panorama direction (per-room camera
+  pose) are derived, never stored as the primary position. Device keys are
+  namespaced: `zwave:<homeId>:<nodeId>`.
+- **Leaflet** — simple (pixel) mode for floor plans; Web Mercator once a plan is
+  georeferenced for the satellite level. Serve Leaflet from the plugin (no
+  CDN) — many Z-Wave JS UI installs are LAN-only.
+- **Layout storage:** plans, rooms, panoramas and placements as JSON in Z-Wave
+  JS UI's store dir, images alongside, so they persist with Z-Wave JS UI's own
+  data *(path resolution TBD)*.
 - **Mesh health is core scope.** Link styling must flag problems (weak or
   one-way links, nodes with too few neighbors, dead/isolated nodes).
   Exact styling is decided after the user reviews a rendered map.
@@ -239,8 +249,11 @@ must not clash with the meanings above.
 
 ## Phase Status
 
-- **Phase 1 (Z-Wave layer):** In progress — plugin skeleton + `/toposite/api/nodes`; map page next
-- **Phase 2 (Zigbee layer):** Deferred
-- **Phase 3 (IP layer):** Deferred
+See `ROADMAP.md` for detail.
+
+- **Phase 1 (floor-plan map, Z-Wave):** In progress — plugin skeleton + `/toposite/api/nodes`; map page next
+- **Phase 2 (room panoramas):** Designed
+- **Phase 3 (satellite view):** Designed
+- **Later (Zigbee and IP layers):** Deferred
 
 <!-- SN: 00001 -->

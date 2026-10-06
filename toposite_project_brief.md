@@ -43,6 +43,7 @@ Dev machine: Alma Linux 9.x.
 
 - Z-Wave JS UI plugin is the product (2026-10-06); Python core and openHAB-binding-first plans dropped.
 - Z-Wave first; Zigbee and IP layers later.
+- Three zoom levels designed in from the start: satellite → floor plan → 360° room panorama (links exit through walls toward neighbors; click to walk a route room by room). Built floor plan → panoramas → satellite. Positions stored in plan coordinates + height; satellite and panorama views are derived. Full design: `ROADMAP.md`.
 - Node icons follow Z-Wave JS UI: hexagon = mains, square = battery, star = controller; node color = hops; link color = data rate; link dash = route kind. Full table in CLAUDE.md.
 - Plugin routes bypass Z-Wave JS UI auth — read-only until TopoSite has its own auth.
 - Visual details (mesh-health flags) settled after the user reviews a rendered map.
