@@ -114,8 +114,16 @@ Decided 2026-10-06:
 - **Core service in Python** — FastAPI REST API + Leaflet browser front end.
   Leaflet with `L.CRS.Simple` places icons on a user-supplied floor plan /
   background image rather than a geographic map.
+- **One map, three layers.** Every device sits on the same floor plan, grouped
+  into three layers the user toggles independently: **IP | Z-Wave | Zigbee**
+  (Leaflet overlay layers). Any combination can be shown at once — e.g. Zigbee
+  + IP together to spot weak Zigbee links near Wi-Fi APs.
+- **Layer = transport.** A device goes on the layer of the network it actually
+  talks over. MQTT devices running over IP (Tasmota, ESPHome, etc.) belong on
+  the IP layer; MQTT only enriches them (names, model, state). Zigbee2MQTT
+  devices go on the Zigbee layer even though Z2M itself is reached over MQTT.
 - **Discovery, not just manual entry:**
-  - IP: ARP table, DHCP leases (pfSense), nmap
+  - IP: ARP table, DHCP leases (pfSense), nmap; MQTT discovery topics for names/details
   - Z-Wave: Z-Wave JS UI WebSocket API (full route/RSSI/data-rate stats) is the
     primary source. openHAB is a fallback: the classic `zwave` binding exposes
     `zwave_neighbours` + listening/routing flags only, and the `zwavejs` binding
