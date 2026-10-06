@@ -10,7 +10,9 @@ for working on the TopoSite project. Read this before touching any code.
 
 **TopoSite** maps network and Z-Wave devices onto their physical locations —
 IP devices and Z-Wave nodes placed on a floor plan or other background image,
-with Z-Wave mesh-neighbor links drawn between nodes.
+with Z-Wave mesh-neighbor links drawn between nodes. Link styling shows mesh
+health so problems are visible: weak or one-way links, nodes with too few
+neighbors, and dead or isolated nodes.
 Private GitHub repo at https://github.com/Nutball-Labs/TopoSite — all work on `main` branch.
 
 "Topo" means **topology**, not topography.

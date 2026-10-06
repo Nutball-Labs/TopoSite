@@ -2,7 +2,9 @@
 
 TopoSite shows where your network and Z-Wave devices physically are. It places
 IP devices and Z-Wave nodes as icons on your own floor plan or background
-image, and draws the Z-Wave mesh-neighbor links between nodes.
+image, and draws the Z-Wave mesh-neighbor links between nodes. The way each
+link is drawn shows the health of the mesh, so problems stand out at a glance:
+weak or one-way links, nodes with too few neighbors, and dead or isolated nodes.
 
 It is for home-automation and small-network admins who know *what* is on their
 network but not *where* it is. TopoSite discovers devices from the network
@@ -15,6 +17,7 @@ drag each one to its spot on the map.
 
 - **IP device map** — discover hosts and place them on a floor plan
 - **Z-Wave mesh map** — node locations plus neighbor links from Z-Wave JS UI or openHAB
+- **Mesh health at a glance** — link styling flags weak, one-way or missing links and dead or isolated nodes
 - **Your own background** — upload a floor plan, site plan or any image
 - **Integrations** — openHAB binding and pfSense package
 
