@@ -8,19 +8,19 @@ for working on the TopoSite project. Read this before touching any code.
 
 ## Project Overview
 
-**TopoSite** maps network and Z-Wave devices onto their physical locations —
-IP devices and Z-Wave nodes placed on a floor plan or other background image,
-with Z-Wave mesh-neighbor links drawn between nodes. Link styling shows mesh
-health so problems are visible: weak or one-way links, nodes with too few
-neighbors, and dead or isolated nodes.
+**TopoSite** is a **Z-Wave JS UI plugin** that places Z-Wave nodes on a floor
+plan or other background image and draws the mesh links between them. Node
+icons show at a glance whether a node is mains-powered (always listening,
+repeats for the mesh) or battery-powered (sleeps, doesn't route). Link styling
+shows mesh health so problems stand out: weak or one-way links, nodes with too
+few neighbors, and dead or isolated nodes.
 Private GitHub repo at https://github.com/Nutball-Labs/TopoSite — all work on `main` branch.
 
 "Topo" means **topology**, not topography.
 
-**Current version:** 0.1.0 (SN 00001)
-**Config dir:** `~/.config/toposite/`
-**Language:** Python 3.9+ (core service) · Java (openHAB binding) · PHP (pfSense package)
-**Build system:** `pyproject.toml` (setuptools) — no CMake, no C++
+**Current version:** 0.1.0 (SN 00001) — `version` in `package.json`
+**Language:** JavaScript (ES modules), Node — runs inside Z-Wave JS UI (Node ≥ 24)
+**Tests:** `npm test` (Node's built-in `node:test`, no dependencies)
 
 ---
 
@@ -28,8 +28,7 @@ Private GitHub repo at https://github.com/Nutball-Labs/TopoSite — all work on 
 
 Experienced Linux sysadmin (Perl/Python/bash). Full root on Alma 9.x dev machine.
 Uses VSCode + vim. Has 40+ years sysadmin experience — don't over-explain Linux
-basics. Python is home turf; Java (openHAB) and PHP (pfSense) are where idiom
-help is most useful.
+basics. JavaScript/Node idioms are where help is most useful.
 
 ---
 
@@ -40,31 +39,54 @@ Final name settled 2026-10-06 after collision checks. Use these IDs everywhere:
 | Context | Identifier |
 |---|---|
 | Display name | `TopoSite` |
-| Python package / CLI / config dir | `toposite` |
-| openHAB binding | `org.openhab.binding.toposite` |
-| pfSense package | `pfSense-pkg-TopoSite` |
+| npm package / URL base | `toposite` / `/toposite/` |
+| openHAB binding *(deferred)* | `org.openhab.binding.toposite` |
+| pfSense package *(deferred)* | `pfSense-pkg-TopoSite` |
 
-TopoSite ships as plugins, so it uses a plain descriptive name — not the
-creature-pun style of the Nutball-Labs apps (TagGoblin, FlickImp, CamClops).
+Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
+(TagGoblin, FlickImp, CamClops).
 
 ---
 
 ## Source Layout
 
-*(No application code written yet — scaffolding phase.)*
-
 | Path | Role |
 |---|---|
-| `src/toposite/__init__.py` | Package root; `__version__` (single source of truth for the version) |
-| `src/toposite/` | Core service — FastAPI REST API, discovery, data store *(planned)* |
-| `src/toposite/web/` | Leaflet front end for floor-plan placement *(planned)* |
-| `pfsense/` | pfSense package (PHP) *(planned)* |
+| `index.js` | Plugin entry: default-export class Z-Wave JS UI constructs with `{zwave, mqtt, app, logger}`; registers routes under `/toposite/` |
+| `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model |
+| `public/` | Map page — Leaflet front end *(planned)* |
+| `test/` | `node:test` unit tests, run with a fake plugin context |
 | `scripts/sn_audit.sh` | Regenerates `sn_audit.txt` |
 | `scripts/gen_line_count.sh` | Daily line-count snapshot → `Line_Counts/` |
 
-The **openHAB binding** does NOT live in this repo. It is built in a sparse
-worktree of `openhab-addons/` created with `/template-openhab`, because it has
-to build and be submitted from there.
+### Plugin API (current)
+
+| Route | Returns |
+|---|---|
+| `GET /toposite/api/nodes` | `{success, data: [node]}` — node: `id, name, location, role (controller/listening/sleeping), isListening, isFrequentListening, isRouting, status (ok/dead/failed), neighbors[], lwr, nlwr` (routes: `hops, repeaters[], rssi, repeaterRSSI[], protocolDataRate, failedBetween`) |
+
+---
+
+## Z-Wave JS UI Plugin Facts
+
+Checked in Z-Wave JS UI source 2026-10-06 (v11.24.2, `docs/guide/plugins.md`,
+`api/lib/CustomPlugin.ts`, `api/app.ts`, `api/lib/ZwaveClient.ts`):
+
+- Loaded with `import()`; must default-export a class; constructor gets
+  `PluginContext {zwave, mqtt, app, logger}`; must implement `async destroy()`
+  (called on shutdown **and on settings save** — remove listeners/timers there).
+- Installed via **Settings → General → Plugins**: absolute path to the plugin
+  dir or an npm package name. In Docker, put it under `store/` so it persists
+  (`/usr/src/app/store/plugins/toposite`).
+- `app` is an Express router mounted at the **root** of Z-Wave JS UI's server →
+  all TopoSite routes live under `/toposite/`.
+- **Plugin routes run BEFORE Z-Wave JS UI's auth check** — anything TopoSite
+  serves is reachable without logging in. See Known Issues.
+- Node data: `zwave.getNodes()` → `ZUINode[]` with `neighbors`, `isListening`,
+  `isFrequentListening`, `isRouting`, `isControllerNode`, `failed`, `available`,
+  `loc`, `name`, `statistics.lwr` / `statistics.nlwr` (zwave-js RouteStatistics).
+- `ZUINode`/`ZwaveClient` are internals, not a stable API — keep all reads of
+  them in `lib/mesh.js`.
 
 ---
 
@@ -72,11 +94,13 @@ to build and be submitted from there.
 
 Every source file carries a serial number comment at the bottom of the file:
 
-```python
-# SN: 00001        ← Python, shell scripts, TOML, YAML
-// SN: 00001       ← Java, JavaScript, PHP (inside <?php)
+```js
+// SN: 00001       ← JavaScript
+# SN: 00001        ← shell scripts, YAML
 <!-- SN: 00001 --> ← Markdown and HTML (invisible when rendered)
 ```
+
+`package.json` can't hold comments, so it carries no SN.
 
 **Rules:**
 - There is one project-wide **high-water mark** SN, currently `00001`
@@ -95,53 +119,41 @@ Every source file carries a serial number comment at the bottom of the file:
 **Example workflow:**
 - Working on a bug fix: change the files, bump their SN to current HWM
 - Cutting a release: increment HWM (e.g. 00001 → 00002), apply to all changed
-  files, update `__version__` in `src/toposite/__init__.py`
+  files, update `version` in `package.json`
 
 ---
 
 ## Deliverable Format
 
 Files are edited in place and delivered via `git push origin main`.
-"Cut the tarball" means: implement changes, verify the package imports and
-tests pass, bump SNs, bump version, commit, and push.
+"Cut the tarball" means: implement changes, verify `npm test` passes, bump
+SNs, bump version, commit, and push.
 
 ---
 
 ## Architecture — Critical Decisions
 
-Decided 2026-10-06:
-
-- **Core service in Python** — FastAPI REST API + Leaflet browser front end.
-  Leaflet with `L.CRS.Simple` places icons on a user-supplied floor plan /
-  background image rather than a geographic map.
-- **One map, three layers.** Every device sits on the same floor plan, grouped
-  into three layers the user toggles independently: **IP | Z-Wave | Zigbee**
-  (Leaflet overlay layers). Any combination can be shown at once — e.g. Zigbee
-  + IP together to spot weak Zigbee links near Wi-Fi APs.
-- **Layer = transport.** A device goes on the layer of the network it actually
-  talks over. MQTT devices running over IP (Tasmota, ESPHome, etc.) belong on
-  the IP layer; MQTT only enriches them (names, model, state). Zigbee2MQTT
-  devices go on the Zigbee layer even though Z2M itself is reached over MQTT.
-- **Discovery, not just manual entry:**
-  - IP: ARP table, DHCP leases (pfSense), nmap; MQTT discovery topics for names/details
-  - Z-Wave: Z-Wave JS UI WebSocket API (full route/RSSI/data-rate stats) is the
-    primary source. openHAB is a fallback: the classic `zwave` binding exposes
-    `zwave_neighbours` + listening/routing flags only, and the `zwavejs` binding
-    exposes no neighbor data.
-  - Zigbee: Zigbee2MQTT `bridge/request/networkmap` (raw, with routes) over
-    MQTT — node type Coordinator/Router/EndDevice, per-link LQI, routes;
-    `power_source` from `bridge/devices`. openHAB `zigbee` binding fallback:
-    `zigbee_neighbors`, `zigbee_routes`, `zigbee_powersource`.
-    *(Added to scope 2026-10-06; visual language TBD after the first map is up.)*
-- **Integrations:** openHAB binding (Java, via `/template-openhab`) and a
-  pfSense package (PHP, in `pfsense/`).
-- **Mesh health is core scope.** Neighbor-link styling must flag problems
-  (weak or one-way links, nodes with too few neighbors, dead/isolated nodes).
-- **Node icons show power source.** Battery vs mains must be obvious at a
-  glance: mains nodes are always listening and act as repeaters; battery nodes
-  sleep and don't route. This determines what each node contributes to the mesh.
-- **Z-Wave map follows Z-Wave JS UI's visual language** (see below) so users
-  of both tools read the same symbols the same way.
+- **Z-Wave JS UI plugin is the product** (decided 2026-10-06). The data that
+  matters — neighbors, LWR/NLWR routes, per-hop RSSI, data rate — lives in
+  Z-Wave JS UI, and its users span Home Assistant, openHAB (`zwavejs`
+  binding) and standalone installs. Supersedes the earlier Python-core and
+  openHAB-binding-first plans.
+- **Z-Wave first.** Zigbee and IP layers come later.
+- **One map, three layers (eventual).** Same floor plan, layers toggled
+  independently: **IP | Z-Wave | Zigbee** (Leaflet overlay layers). A device
+  goes on the layer of the transport it talks over; MQTT devices on Wi-Fi
+  (Tasmota, ESPHome) belong on the IP layer.
+- **Leaflet with `L.CRS.Simple`** places icons on a user-supplied floor plan /
+  background image rather than a geographic map. Serve Leaflet from the plugin
+  (no CDN) — many Z-Wave JS UI installs are LAN-only.
+- **Layout storage:** positions + floor-plan references as a JSON file in
+  Z-Wave JS UI's store dir, so it persists with Z-Wave JS UI's own data
+  *(path resolution TBD)*.
+- **Mesh health is core scope.** Link styling must flag problems (weak or
+  one-way links, nodes with too few neighbors, dead/isolated nodes).
+  Exact styling is decided after the user reviews a rendered map.
+- **Node icons show power source**, following Z-Wave JS UI's visual language below.
+- **License:** GPLv3 (plugin is a separate package; Z-Wave JS UI is MIT).
 
 ### Z-Wave visual language (from Z-Wave JS UI)
 
@@ -189,30 +201,29 @@ Taken from Z-Wave JS UI's mesh graph, `src/components/custom/ZwaveGraph.vue`
 | Dashed, arrow | Custom return route |
 | Short-dash, labeled "Failed ❌" | Failed hop between two nodes |
 
-Link labels show RSSI per hop where known. TopoSite extends this with its own
-mesh-health flags (weak/one-way links, too few neighbors) — choose those
-styles so they don't clash with the meanings above.
-- **check_mk dropped** — its bundled NagVis already does floor-plan maps.
-- Keep the Nutball-Labs template's docs and conventions (session commands, SN
-  tracking); CMake/C++ build files dropped.
+Link labels show RSSI per hop where known. TopoSite's own mesh-health flags
+must not clash with the meanings above.
 
----
+### Deferred data sources (for the Zigbee / IP layers)
 
-## Hard Dependencies
-
-| Tool/Lib | Install | Notes |
-|---|---|---|
-| Python 3.9+ | `python3` (Alma base) | Core service |
-| FastAPI + uvicorn | `pip install -e .` | REST API / web server |
-| nmap | `dnf install nmap` | Optional — active IP discovery |
+- Zigbee: Zigbee2MQTT `bridge/request/networkmap` (`{"type":"raw","routes":true}`)
+  — Coordinator/Router/EndDevice, per-link LQI, routes; `power_source` from
+  `bridge/devices`. Possibly reachable through the plugin's `mqtt` client.
+- IP: pfSense DHCP/ARP via its API plus manual placement (ARP/nmap from inside
+  a Z-Wave JS UI container only sees the container's network).
+- openHAB: classic `zwave` binding exposes only `zwave_neighbours` + listening
+  flags; `zwavejs` binding exposes no neighbor data. An openHAB binding is
+  optional/deferred — `zwavejs` binding users already run Z-Wave JS UI.
 
 ---
 
 ## Known Issues / Pending Work
 
-- Application code not yet written — scaffolding phase only
-- License: core is GPLv3. Bindings merged into `openhab-addons` must be
-  EPL-2.0 — decide the binding's license before submitting it.
+- **No auth on plugin routes.** Z-Wave JS UI's login doesn't cover them. Keep
+  routes read-only; before any write route (saving positions, uploading floor
+  plans) add an auth check or an explicit "trusted network only" setting.
+- Layout storage path inside Z-Wave JS UI's store dir not yet resolved.
+- Not yet tested inside a live Z-Wave JS UI instance.
 
 ---
 
@@ -228,8 +239,8 @@ styles so they don't clash with the meanings above.
 
 ## Phase Status
 
-- **Phase 1 (core service):** Not yet started — architecture planned
-- **Phase 2 (openHAB binding):** Not yet started
-- **Phase 3 (pfSense package):** Not yet started
+- **Phase 1 (Z-Wave layer):** In progress — plugin skeleton + `/toposite/api/nodes`; map page next
+- **Phase 2 (Zigbee layer):** Deferred
+- **Phase 3 (IP layer):** Deferred
 
 <!-- SN: 00001 -->

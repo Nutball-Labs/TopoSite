@@ -12,7 +12,9 @@
       "Bash(gh auth status 2>&1)",
       "Bash(echo \"EXIT:$?\")",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(python3:*)",
+      "Bash(node --test:*)",
+      "Bash(npm test)",
+      "Bash(node --version)",
       "WebSearch",
       "WebFetch(domain:github.com)"
     ]

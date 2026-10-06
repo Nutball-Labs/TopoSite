@@ -1,4 +1,8 @@
-# Python
+# Node
+node_modules/
+*.tgz
+
+# Python (helper scripts)
 __pycache__/
 *.py[cod]
 *.egg-info/

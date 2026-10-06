@@ -10,7 +10,7 @@ cd "$PROJ"
 
 {
     echo "--- TopoSite SN Audit: $(date '+%Y-%m-%d %H:%M:%S') ---"
-    find . \( -name .git -o -name .venv -o -name venv -o -name __pycache__ \
+    find . \( -name .git -o -name node_modules -o -name .venv -o -name venv -o -name __pycache__ \
               -o -name '*.egg-info' -o -name build -o -name dist \) -prune -o \
            -type f \( -name '*.py' -o -name '*.sh' -o -name '*.toml' -o -name '*.md' \
               -o -name '*.js' -o -name '*.php' -o -name '*.java' -o -name '*.html' \

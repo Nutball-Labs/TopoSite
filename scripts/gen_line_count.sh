@@ -14,7 +14,7 @@ cd "$PROJ"
 # List files matching a name pattern under a directory (skips venvs/caches)
 files() {
     [ -d "$1" ] || return 0
-    find "$1" \( -name .venv -o -name venv -o -name __pycache__ \) -prune -o \
+    find "$1" \( -name node_modules -o -name .venv -o -name venv -o -name __pycache__ \) -prune -o \
          -type f -name "$2" -print
 }
 
@@ -56,23 +56,21 @@ mkdir -p "$PROJ/Line_Counts"
 # ---------------------------------------------------------------------------
 # Collect all sections
 # ---------------------------------------------------------------------------
-py=$(     files src '*.py'                                  | scan)
-web=$(  { files src '*.js'; files src '*.html'; files src '*.css'; } | scan)
-php=$(    files pfsense '*.php'                             | scan)
-tests=$(  files tests '*.py'                                | scan)
+plugin=$({ ls ./*.js 2>/dev/null | sed 's#^\./##'; files lib '*.js'; } | scan)
+web=$(  { files public '*.js'; files public '*.html'; files public '*.css'; } | scan)
+tests=$(  files test '*.js'                                 | scan)
 shell=$(  files scripts '*.sh'                              | scan)
 docs_md=$(ls ./*.md 2>/dev/null | sed 's#^\./##'            | scan)
 
 # ---------------------------------------------------------------------------
 # Compute totals
 # ---------------------------------------------------------------------------
-t_py=$(   nonblank "$py"      | sumlines)
+t_js=$(   nonblank "$plugin"  | sumlines)
 t_web=$(  nonblank "$web"     | sumlines)
-t_php=$(  nonblank "$php"     | sumlines)
 t_test=$( nonblank "$tests"   | sumlines)
 t_sh=$(   nonblank "$shell"   | sumlines)
 t_md=$(   nonblank "$docs_md" | sumlines)
-t_grand=$(( t_py + t_web + t_php + t_test + t_sh + t_md ))
+t_grand=$(( t_js + t_web + t_test + t_sh + t_md ))
 
 # ---------------------------------------------------------------------------
 # Write markdown
@@ -90,10 +88,9 @@ cat <<HEADER
 
 | Category | Lines |
 |---|---|
-| Python (\`src/\`) | $(fmt $t_py) |
-| Web front end (\`.js\` / \`.html\` / \`.css\`) | $(fmt $t_web) |
-| PHP (\`pfsense/\`) | $(fmt $t_php) |
-| Tests (\`tests/\`) | $(fmt $t_test) |
+| Plugin (\`index.js\`, \`lib/\`) | $(fmt $t_js) |
+| Map page (\`public/\`) | $(fmt $t_web) |
+| Tests (\`test/\`) | $(fmt $t_test) |
 | Shell (\`scripts/\`) | $(fmt $t_sh) |
 | Markdown (\`.md\`) | $(fmt $t_md) |
 | **Total** | **$(fmt $t_grand)** |
@@ -102,10 +99,9 @@ cat <<HEADER
 
 ## By File
 HEADER
-section "Python (\`src/\`)"       "$py"
-section "Web front end"          "$web"
-section "pfSense (\`pfsense/\`)"  "$php"
-section "Tests (\`tests/\`)"      "$tests"
+section "Plugin (\`index.js\`, \`lib/\`)" "$plugin"
+section "Map page (\`public/\`)"  "$web"
+section "Tests (\`test/\`)"       "$tests"
 section "Scripts (\`scripts/\`)"  "$shell"
 section "Documentation (\`.md\`)" "$docs_md"
 } > "$OUT"

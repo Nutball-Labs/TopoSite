@@ -1,52 +1,51 @@
 # TopoSite
 
-TopoSite shows where your network and Z-Wave devices physically are. It places
-IP devices and Z-Wave nodes as icons on your own floor plan or background
-image, and draws the Z-Wave mesh-neighbor links between nodes. The way each
-link is drawn shows the health of the mesh, so problems stand out at a glance:
-weak or one-way links, nodes with too few neighbors, and dead or isolated nodes.
+TopoSite is a [Z-Wave JS UI](https://github.com/zwave-js/zwave-js-ui) plugin
+that shows where your Z-Wave devices physically are. It places your nodes as
+icons on your own floor plan or background image and draws the mesh links
+between them. The way each link is drawn shows the health of the mesh, so
+problems stand out at a glance: weak or one-way links, nodes with too few
+neighbors, and dead or isolated nodes.
 
-It is for home-automation and small-network admins who know *what* is on their
-network but not *where* it is. TopoSite discovers devices from the network
-(ARP, DHCP leases, nmap), from Z-Wave JS UI, from Zigbee2MQTT and from openHAB, so you only have to
-drag each one to its spot on the map.
+Z-Wave JS UI's own mesh graph shows *how* nodes connect; TopoSite shows that
+same mesh laid over *where* the devices actually are, so you can see which
+room needs a repeater.
 
 ---
 
 ## Features (planned)
 
-- **IP device map** — discover hosts and place them on a floor plan
-- **Z-Wave mesh map** — node locations plus neighbor links from Z-Wave JS UI or openHAB
-- **Zigbee mesh map** — coordinator, routers and end devices with link quality, from Zigbee2MQTT or openHAB
-- **Mesh health at a glance** — link styling flags weak, one-way or missing links and dead or isolated nodes
-- **Battery vs mains at a glance** — Z-Wave node icons show the power source, since mains-powered
+- **Z-Wave mesh on your floor plan** — node locations plus neighbor and route links
+- **Battery vs mains at a glance** — node icons show the power source, since mains-powered
   nodes are always listening and repeat traffic for the mesh while battery nodes sleep and don't route
-- **Familiar symbols** — the Z-Wave map uses the same shapes and colors as Z-Wave JS UI's mesh view
+- **Familiar symbols** — the same shapes and colors as Z-Wave JS UI's mesh view
   (hexagon = mains, square = battery, star = controller; color = hop count; link color = data rate)
+- **Mesh health at a glance** — link styling flags weak, one-way or missing links and dead or isolated nodes
 - **Your own background** — upload a floor plan, site plan or any image
-- **One map, three layers** — IP, Z-Wave and Zigbee on the same floor plan; toggle each layer on or off independently
-- **Integrations** — openHAB binding and pfSense package
+- **Later:** Zigbee (Zigbee2MQTT) and IP device layers on the same map, each toggled independently
 
 ---
 
 ## Requirements
 
-**Platform:** Linux. Primary development and testing on Alma Linux 9.x / RHEL 9.
-
-- Python 3.9+
-- nmap (optional, for active discovery)
+- Z-Wave JS UI (which requires Node.js 24 or newer)
 
 ---
 
-## Installing from Source
+## Installing
 
 ```bash
-git clone git@github.com:Nutball-Labs/TopoSite.git
-cd TopoSite
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e .
+cd /path/to/zwave-js-ui/store/plugins     # Docker: the store volume
+git clone git@github.com:Nutball-Labs/TopoSite.git toposite
 ```
+
+Then in Z-Wave JS UI: **Settings → General → Plugins**, add the plugin's path
+as Z-Wave JS UI sees it (Docker: `/usr/src/app/store/plugins/toposite`) and save.
+
+TopoSite's pages are served by Z-Wave JS UI under `/toposite/`.
+
+> **Note:** Z-Wave JS UI's login does not cover plugin pages. Don't expose
+> Z-Wave JS UI to untrusted networks while TopoSite is installed.
 
 ---
 
@@ -58,7 +57,7 @@ pip install -e .
 
 ## Project Status
 
-**v0.1.0 — Scaffolding phase.** Application code not yet written.
+**v0.1.0 — early development.** Plugin skeleton and node API in place; map page next.
 
 ---
 
