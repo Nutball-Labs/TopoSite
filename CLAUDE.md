@@ -54,7 +54,7 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 |---|---|
 | `index.js` | Plugin entry: default-export class Z-Wave JS UI constructs with `{zwave, mqtt, app, logger}`; registers routes under `/toposite/` |
 | `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model |
-| `public/` | Map page — Leaflet front end *(planned)* |
+| `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4 — no SN, skipped by sn_audit) |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
 | `ROADMAP.md` | Zoom levels (satellite → floor plan → room panorama), data model, phases |
 | `scripts/sn_audit.sh` | Regenerates `sn_audit.txt` |
@@ -64,6 +64,7 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 
 | Route | Returns |
 |---|---|
+| `GET /toposite/` | Map page (static files from `public/`; `/toposite` redirects to `/toposite/`) |
 | `GET /toposite/api/nodes` | `{success, data: [node]}` — node: `id, name, location, role (controller/listening/sleeping), isListening, isFrequentListening, isRouting, status (ok/dead/failed), neighbors[], unknownNeighbors[], lwr, nlwr` (routes: `hops, repeaters[], rssi, repeaterRSSI[], protocolDataRate, failedBetween`). Virtual nodes (broadcast 255, multicast) are skipped. RSSI is dBm, `'saturated'`, `'no-signal'` or `null` (zwave-js RssiError 126/125/127). `unknownNeighbors` = IDs in the controller's neighbor table with no node (removed nodes) |
 
 ---
@@ -105,6 +106,18 @@ Checked in Z-Wave JS UI source 2026-10-06/09 and live on 11.24.2 2026-10-09 (`do
   `loc`, `name`, `statistics.lwr` / `statistics.nlwr` (zwave-js RouteStatistics).
 - `ZUINode`/`ZwaveClient` are internals, not a stable API — keep all reads of
   them in `lib/mesh.js`.
+
+### Upstream watch list (open Z-Wave JS UI issues/PRs, checked 2026-10-09)
+
+| Item | Effect on TopoSite |
+|---|---|
+| #4722 / #4745 / PR #4747 — backend refactor (15-PR stack, draft) | Plugin loader moves to `api/runtime/AppRuntime.ts`, same `import()` + `basename` + router. `PluginContext.zwave`/`mqtt` become **optional** → `/api/nodes` returns 503 when absent. `getNodes()`, `neighbors`, `virtual`, `refreshNeighbors` and the socket `allowedApis` unchanged at stack head `9256f7e`. Re-check when it lands. |
+| #4740 — normalize socket API ACKs | Error ACK shape may change; the refresh button only reads `success`/`message` |
+| #3888 — plugins get a nav tab (iframe to a plugin path) | Opportunity: TopoSite in Z-Wave JS UI's sidebar once it lands |
+| PR #4746 — dashboard refactor | Login still kept in `localStorage.user.token`; no impact found |
+| PR #4390 / #4389 — graph moves vis-network → VueFlow | No color changes; re-check the visual language when it lands |
+| PR #4805 — release binaries built as Node SEA | Unverified whether `import()` of an external plugin works in an SEA binary; Docker unaffected |
+| PR #4757 — Docker image moves to Node 24 | Fine (TopoSite needs ≥ 20) |
 
 ---
 
@@ -250,8 +263,10 @@ must not clash with the meanings above.
 - **No auth on plugin routes.** Z-Wave JS UI's login doesn't cover them. Keep
   routes read-only; before any write route (saving positions, uploading floor
   plans) add an auth check or an explicit "trusted network only" setting.
-- **Forced neighbor refresh** (requested 2026-10-09) — design pending: must not
-  become an unauthenticated route that turns the radio off.
+- **Forced neighbor refresh** (2026-10-09): map page button calls Z-Wave JS
+  UI's authenticated socket.io `ZWAVE_API refreshNeighbors` using the browser's
+  Z-Wave JS UI login (`localStorage.user.token`) — no TopoSite route. Not yet
+  tested live.
 - Layout storage path inside Z-Wave JS UI's store dir not yet resolved.
 - Live-tested on Z-Wave JS UI 11.24.2 (wopr3, 2026-10-09): loads, `/toposite/api/nodes` returns the mesh.
 
@@ -271,7 +286,7 @@ must not clash with the meanings above.
 
 See `ROADMAP.md` for detail.
 
-- **Phase 1 (floor-plan map, Z-Wave):** In progress — plugin skeleton + `/toposite/api/nodes`; map page next
+- **Phase 1 (floor-plan map, Z-Wave):** In progress — node API + read-only map page with auto-layout and neighbor refresh; floor-plan upload/placement next (needs auth)
 - **Phase 2 (room panoramas):** Designed
 - **Phase 3 (satellite view):** Designed
 - **Later (Zigbee and IP layers):** Deferred

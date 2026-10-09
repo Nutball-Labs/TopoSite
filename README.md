@@ -68,7 +68,9 @@ TopoSite's pages are served by Z-Wave JS UI under `/toposite/`.
 
 ## Project Status
 
-**v0.1.0 — early development.** Plugin skeleton and node API in place; map page next.
+**v0.1.0 — early development.** Node API and a first read-only map page at
+`/toposite/` (temporary auto-layout, placeholder background, "Refresh neighbors"
+button). Floor-plan upload and dragging nodes into place come next.
 
 ---
 
@@ -81,6 +83,18 @@ TopoSite is built the same way as its sister projects
 an experienced Linux sysadmin and Claude (Anthropic's AI), which handles the
 implementation under continuous human guidance and review. The architecture,
 feature decisions, and real-world testing are entirely human-driven.
+
+---
+
+## Credits
+
+- TopoSite's visual language (node shapes, hop and data-rate colors, route
+  styles) follows the Network Graph in
+  [Z-Wave JS UI](https://github.com/zwave-js/zwave-js-ui) by Daniel Lando and
+  contributors (MIT).
+- Bundled: [Leaflet](https://leafletjs.com) 1.9.4 (BSD-2-Clause) and the
+  [Socket.IO](https://socket.io) 4.8.4 client (MIT); their licenses are in
+  `public/vendor/`.
 
 ---
 
