@@ -58,6 +58,9 @@ export default class TopoSite {
             return this._layout().addBlankPlan({ name, widthPx, heightPx })
         })
 
+        // Body (JSON): any of {name, widthPx, heightPx, metersPerPixel}
+        api('patch', '/plans/:id', (req) => this._layout().updatePlan(req.params.id, req.body))
+
         api('delete', '/plans/:id', (req) => this._layout().deletePlan(req.params.id))
 
         // Body (JSON): {shapes: [...]} — replaces every drawn shape on the plan

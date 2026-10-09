@@ -11,7 +11,7 @@ async function setup({ nodes = [{ id: 1, isControllerNode: true, available: true
     const storeDir = await mkdtemp(path.join(tmpdir(), 'toposite-routes-'))
     await writeFile(path.join(storeDir, 'settings.json'), JSON.stringify({ gateway: { authEnabled } }))
     const routes = {}
-    const app = Object.fromEntries(['get', 'post', 'put', 'delete'].map((m) =>
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((m) =>
         [m, (p, fn) => { routes[`${m.toUpperCase()} ${p}`] = fn }]))
     const ctx = {
         zwave: zwave ? { homeHex: '0xcdfbb3c7', getNodes: () => nodes } : undefined,

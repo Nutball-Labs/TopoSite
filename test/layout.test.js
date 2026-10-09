@@ -120,6 +120,26 @@ test('blank plans hold shapes; saving replaces only that plan\'s shapes; deletin
     assert.deepEqual(saved.shapes.map((sh) => sh.planId), [b.id])
 })
 
+test('updatePlan renames, resizes blank plans and sets scale; image plans keep their size', async () => {
+    const layout = await fresh()
+    const blank = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 2000 })
+    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: blank.id, x: 500, y: 1900 })
+    const grown = await layout.updatePlan(blank.id, { heightPx: 3000, metersPerPixel: 0.3048 / 50, name: 'House + garage' })
+    assert.equal(grown.heightPx, 3000)
+    assert.equal(grown.widthPx, 3000)
+    assert.equal(grown.metersPerPixel, 0.3048 / 50)
+    assert.equal(grown.name, 'House + garage')
+    assert.deepEqual((await layout.load()).placements[0], { deviceKey: 'zwave:cdfbb3c7:2', planId: blank.id, x: 500, y: 1900 },
+        'growing a plan leaves positions alone')
+
+    const img = await layout.addPlan({ name: 'img', widthPx: 10, heightPx: 10, bytes: PNG })
+    await assert.rejects(layout.updatePlan(img.id, { heightPx: 20 }), { status: 409 })
+    assert.equal((await layout.updatePlan(img.id, { metersPerPixel: 0.01 })).metersPerPixel, 0.01, 'scale is fine on image plans')
+    await assert.rejects(layout.updatePlan(blank.id, { widthPx: 0 }), { status: 400 })
+    await assert.rejects(layout.updatePlan(blank.id, { metersPerPixel: -1 }), { status: 400 })
+    await assert.rejects(layout.updatePlan('nope', { name: 'x' }), { status: 404 })
+})
+
 test("store dir: env overrides, then <cwd>/store, then two levels above the plugin", async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'toposite-store-'))
     const store = path.join(root, 'store')
