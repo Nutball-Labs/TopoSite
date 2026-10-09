@@ -83,7 +83,7 @@ const state = {
     layout: { plans: [], placements: [] },
     planId: readPref(PLAN_KEY),
     shownPlanId: undefined, // plan the view was last fitted to
-    imageUrls: new Map(), // planId → object URL of the fetched image
+    imageUrls: new Map(), // planId → {image, url}: object URL of the fetched background
     labelZoom: 0,
     drawing: false, // draw mode on?
     drawnPlanId: undefined, // plan whose shapes are in layers.drawing
@@ -167,7 +167,10 @@ async function draw() {
             panel.setStatus(explain(error, `Can't load image for ${esc(plan.name)}`))
             return null
         })
-        if (url) L.imageOverlay(url, bounds, { ...IGNORE, pane: 'ts-background' }).addTo(layers.background)
+        // imageRect: where the picture sits, in plan px (y down); older plans: whole plan
+        const r = plan.imageRect ?? { x: 0, y: 0, w: width, h: height }
+        const imgBounds = [[height - (r.y + r.h), r.x], [height - r.y, r.x + r.w]]
+        if (url) L.imageOverlay(url, imgBounds, { ...IGNORE, pane: 'ts-background' }).addTo(layers.background)
     } else {
         L.imageOverlay(gridImage(width, height), bounds, { ...IGNORE, opacity: 0.6, pane: 'ts-background' }).addTo(layers.background)
     }
@@ -337,10 +340,11 @@ function applyLabelZoom() {
 /** Plan images go through api() so the login token is sent; shown via an object URL. */
 async function planImageUrl(plan) {
     const cached = state.imageUrls.get(plan.id)
-    if (cached) return cached
+    if (cached?.image === plan.image) return cached.url
+    if (cached) URL.revokeObjectURL(cached.url)
     const res = await api(`plans/${plan.id}/image`, { raw: true, headers: { Accept: 'image/*' } })
     const url = URL.createObjectURL(await res.blob())
-    state.imageUrls.set(plan.id, url)
+    state.imageUrls.set(plan.id, { image: plan.image, url })
     return url
 }
 
@@ -484,12 +488,48 @@ async function uploadPlan(file) {
     }
 }
 
+function forgetImage(planId) {
+    const cached = state.imageUrls.get(planId)
+    if (cached) URL.revokeObjectURL(cached.url)
+    state.imageUrls.delete(planId)
+}
+
+/** Set or replace the current plan's background; positions, drawing and scale stay. */
+async function setBackground(plan, file) {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return panel.setStatus('Use a PNG, JPEG or WebP image.')
+    if (file.size > 25 * 1024 * 1024) return panel.setStatus('That image is over 25 MB — export a smaller one.')
+    panel.setStatus(`Uploading ${esc(file.name)}…`)
+    try {
+        const bitmap = await createImageBitmap(file)
+        const qs = new URLSearchParams({ imgWidthPx: bitmap.width, imgHeightPx: bitmap.height })
+        bitmap.close()
+        const updated = await api(`plans/${plan.id}/image?${qs}`, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+        forgetImage(plan.id)
+        panel.setStatus(`Background of ${esc(plan.name)} set to ${esc(file.name)}. Node positions and the drawing are unchanged.` +
+            (updated.stretched ? " Its proportions don't match the plan's, so it's stretched to fit." : ''))
+    } catch (error) {
+        panel.setStatus(explain(error, 'Background upload failed'))
+    }
+    lastLayoutJSON = ''
+    reload()
+}
+
+async function removeBackground(plan) {
+    try {
+        await api(`plans/${plan.id}/image`, { method: 'DELETE' })
+        forgetImage(plan.id)
+        panel.setStatus(`Removed the background of ${esc(plan.name)}. Node positions and the drawing are unchanged.`)
+    } catch (error) {
+        panel.setStatus(explain(error, "Couldn't remove the background"))
+    }
+    lastLayoutJSON = ''
+    reload()
+}
+
 async function deletePlan(plan) {
     try {
         await api(`plans/${plan.id}`, { method: 'DELETE' })
-        const url = state.imageUrls.get(plan.id)
-        if (url) URL.revokeObjectURL(url)
-        state.imageUrls.delete(plan.id)
+        forgetImage(plan.id)
         panel.setStatus(`Deleted ${esc(plan.name)} and its placements.`)
     } catch (error) {
         panel.setStatus(explain(error, 'Delete failed'))
@@ -580,20 +620,46 @@ function addPanel() {
                 <div class="muted" id="ts-summary">Loading…</div>
                 <div class="ts-row">
                     <select id="ts-plan" title="Background image"></select>
-                    <button type="button" id="ts-add" title="Upload a PNG, JPEG or WebP image as a new background">Add image…</button>
+                    <button type="button" id="ts-add" title="Upload a PNG, JPEG or WebP image as a new plan">Add image…</button>
                     <button type="button" id="ts-new" title="Start a blank floor plan to draw on">New drawing</button>
                     <button type="button" id="ts-del" title="Delete this background and every node position on it">Delete</button>
                     <input type="file" id="ts-file" accept="image/png,image/jpeg,image/webp" hidden>
+                </div>
+                <div class="ts-row">
+                    <button type="button" id="ts-bg" title="Set or replace this plan's background image — node positions and the drawing stay">Background…</button>
+                    <button type="button" id="ts-bgdel" title="Remove this plan's background image (click twice) — node positions and the drawing stay">✕</button>
+                    <input type="file" id="ts-bgfile" accept="image/png,image/jpeg,image/webp" hidden>
                 </div>
                 <div class="ts-row"><button type="button" id="ts-draw" title="Draw rectangles, circles, lines and labels on this plan">Draw</button><button type="button" id="ts-refresh"
                     title="Asks Z-Wave JS UI to re-read every node's neighbor list from the controller. The radio pauses for a few seconds; allowed once a minute.">Refresh neighbors</button></div>
                 <div class="muted" id="ts-status"></div>`
             L.DomEvent.disableClickPropagation(div)
             L.DomEvent.disableScrollPropagation(div)
-            els = Object.fromEntries(['summary', 'plan', 'add', 'new', 'del', 'draw', 'file', 'refresh', 'status']
+            els = Object.fromEntries(['summary', 'plan', 'add', 'new', 'del', 'draw', 'file', 'bg', 'bgdel', 'bgfile', 'refresh', 'status']
                 .map((k) => [k, div.querySelector(`#ts-${k}`)]))
             els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
             els.add.addEventListener('click', () => els.file.click())
+            els.bg.addEventListener('click', () => els.bgfile.click())
+            els.bgfile.addEventListener('change', () => {
+                const file = els.bgfile.files[0]
+                els.bgfile.value = ''
+                const plan = currentPlan()
+                if (file && plan) setBackground(plan, file)
+            })
+            let armedBg = null
+            els.bgdel.addEventListener('click', () => {                 // two clicks, instead of confirm()
+                const plan = currentPlan()
+                if (!plan?.image) return
+                if (armedBg !== plan.id) {
+                    armedBg = plan.id
+                    els.bgdel.textContent = 'Remove background?'
+                    setTimeout(() => { armedBg = null; els.bgdel.textContent = '✕' }, 4000)
+                    return
+                }
+                armedBg = null
+                els.bgdel.textContent = '✕'
+                removeBackground(plan)
+            })
             els.new.addEventListener('click', () => newDrawing())
             els.draw.addEventListener('click', () => setDrawing(!state.drawing))
             els.file.addEventListener('change', () => {
@@ -635,6 +701,8 @@ function addPanel() {
             els.plan.hidden = plans.length === 0
             els.del.hidden = plans.length === 0
             els.draw.hidden = plans.length === 0
+            els.bg.hidden = plans.length === 0
+            els.bgdel.hidden = !plans.find((p) => p.id === selectedId)?.image
             // Each plan keeps its own node positions — show how many, so a plan with
             // none doesn't look like the positions were lost.
             const count = (id) => placements.filter((pl) => pl.planId === id).length

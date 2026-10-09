@@ -22,7 +22,7 @@ directions are *derived* from them through per-plan and per-room transforms.
 
 | Object | Fields | Notes |
 |---|---|---|
-| **Plan** (one per floor) | `id, name, image, widthPx, heightPx, metersPerPixel, elevationM, georef?` | `metersPerPixel` set by calibration (user draws a line of known length). `elevationM` = floor height, for links between floors. |
+| **Plan** (one per floor) | `id, name, image, imageRect?, widthPx, heightPx, metersPerPixel, elevationM, georef?` | `metersPerPixel` set by calibration (user draws a line of known length). `elevationM` = floor height, for links between floors. |
 | **Georef** (on a plan) | `anchor {lat, lng}` for plan pixel (0,0), `rotationDeg`, plus `metersPerPixel` | Places the plan on the satellite map. Optional; absent = no satellite level. |
 | **Room** | `id, planId, name, polygon [[x,y]…], openings? [edgeIndex…], zjuiLocation?, panorama?` | Polygon in plan pixels, any size (closets, cabinets, crawlspaces too). Edges are walls unless listed in `openings` (doorless archways, not counted as walls). `zjuiLocation` matches Z-Wave JS UI's node `loc`, so nodes tagged "Kitchen" are placed into the Kitchen room by default. Once a node is placed, the room polygon containing it wins. |
 | **Panorama** (on a room) | `image, cameraX, cameraY, cameraHeightM, headingDeg` | Equirectangular 360° photo. Camera position in plan pixels; `headingDeg` = plan direction at the photo's center column. |

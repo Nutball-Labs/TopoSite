@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { Layout, sniffImage, cleanShape } from '../lib/layout.js'
+import { Layout, sniffImage, cleanShape, imageRectOf } from '../lib/layout.js'
 import { resolveStoreDir } from '../lib/store.js'
 import { mkdir, writeFile } from 'node:fs/promises'
 
@@ -133,7 +133,9 @@ test('updatePlan renames, resizes blank plans and sets scale; image plans keep t
         'growing a plan leaves positions alone')
 
     const img = await layout.addPlan({ name: 'img', widthPx: 10, heightPx: 10, bytes: PNG })
-    await assert.rejects(layout.updatePlan(img.id, { heightPx: 20 }), { status: 409 })
+    const grownImg = await layout.updatePlan(img.id, { heightPx: 20 })
+    assert.equal(grownImg.heightPx, 20, 'image plans can grow')
+    assert.deepEqual(grownImg.imageRect, { x: 0, y: 0, w: 10, h: 10 }, 'and the image keeps its size')
     assert.equal((await layout.updatePlan(img.id, { metersPerPixel: 0.01 })).metersPerPixel, 0.01, 'scale is fine on image plans')
     await assert.rejects(layout.updatePlan(blank.id, { widthPx: 0 }), { status: 400 })
     await assert.rejects(layout.updatePlan(blank.id, { metersPerPixel: -1 }), { status: 400 })
@@ -158,6 +160,42 @@ test('padTop/padLeft add room and move placements and shapes with the drawing; e
     await assert.rejects(layout.updatePlan(plan.id, { padTop: 2100, expectHeightPx: 3000 }), { status: 409 }, 'a retry is refused')
     assert.equal((await layout.load()).plans[0].heightPx, 5100, 'and changes nothing')
     await assert.rejects(layout.updatePlan(plan.id, { padTop: -1 }), { status: 400 })
+})
+
+test('a background can be set on, replaced in and removed from an existing plan — placements and shapes stay', async () => {
+    const layout = await fresh()
+    const plan = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 5100 })
+    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 500, y: 3000 })
+    await layout.setShapes(plan.id, [{ type: 'rect', x: 262, y: 2454, w: 2475, h: 1292 }])
+
+    const set = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550 })
+    assert.match(set.image, new RegExp(`^${plan.id}-[0-9a-f]{6}\\.png$`))
+    assert.deepEqual(set.imageRect, { x: 0, y: 0, w: 3000, h: 5100 }, 'a new background covers the plan')
+    assert.equal(set.stretched, false, '1500x2550 has the same aspect as 3000x5100')
+    assert.ok(existsSync(layout.imagePath(set)))
+
+    const pad = await layout.updatePlan(plan.id, { padTop: 100 })
+    assert.deepEqual(pad.imageRect, { x: 0, y: 100, w: 3000, h: 5100 }, 'padding moves the background with the drawing')
+
+    const replaced = await layout.setImage(plan.id, { bytes: JPEG, imgWidthPx: 400, imgHeightPx: 400 })
+    assert.notEqual(replaced.image, set.image)
+    assert.ok(!existsSync(layout.imagePath(set)), 'old image file deleted')
+    assert.deepEqual(replaced.imageRect, { x: 0, y: 100, w: 3000, h: 5100 }, 'a replacement takes the old one\'s place')
+    assert.equal(replaced.stretched, true)
+
+    const saved = await layout.load()
+    assert.deepEqual([saved.placements[0].x, saved.placements[0].y], [500, 3100])
+    assert.equal(saved.shapes.length, 1)
+
+    const removed = await layout.removeImage(plan.id)
+    assert.equal(removed.image, null)
+    assert.equal(removed.imageRect, undefined)
+    assert.ok(!existsSync(layout.imagePath(replaced)))
+    assert.equal((await layout.load()).placements.length, 1, 'placements survive removing the background')
+
+    await assert.rejects(layout.setImage(plan.id, { bytes: Buffer.from('<svg/>'), imgWidthPx: 1, imgHeightPx: 1 }), { status: 415 })
+    await assert.rejects(layout.setImage('nope', { bytes: PNG, imgWidthPx: 1, imgHeightPx: 1 }), { status: 404 })
+    assert.deepEqual(imageRectOf({ widthPx: 7, heightPx: 9 }), { x: 0, y: 0, w: 7, h: 9 }, 'legacy plans: whole plan')
 })
 
 test("store dir: env overrides, then <cwd>/store, then two levels above the plugin", async () => {

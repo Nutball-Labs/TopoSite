@@ -68,6 +68,8 @@ Open `http://<zwave-js-ui-host>:8091/toposite/`.
 - **Add image…** uploads a background: a floor plan, site plan or a satellite
   screenshot (PNG, JPEG or WebP, up to 25 MB). Several images can be added and
   switched with the drop-down.
+- **Background…** sets or replaces the current plan's background image without
+  touching node positions or the drawing; **✕** removes it again.
 - **New drawing** starts a blank floor plan; **Draw** shows tools for
   rectangles, circles, lines and text labels, plus edit, move and delete.
   You can also draw on top of an uploaded image (e.g. trace walls over a
