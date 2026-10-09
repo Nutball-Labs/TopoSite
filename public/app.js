@@ -1,12 +1,17 @@
 // app.js — TopoSite map page (Leaflet, simple/pixel CRS).
 //
-// Reads /toposite/api/nodes, places nodes with a temporary auto-layout and
-// draws routes and neighbor links in Z-Wave JS UI's visual language.
+// Reads /toposite/api/nodes and /toposite/api/layout, shows the selected plan
+// image (or a placeholder grid), and draws nodes, routes and neighbor links in
+// Z-Wave JS UI's visual language. With a plan shown, nodes can be dragged into
+// place; positions are saved server-side in plan pixels. Unplaced nodes use a
+// temporary auto-layout and are drawn faded.
 //
-// "Refresh neighbors" does NOT go through a TopoSite route: TopoSite routes
-// run before Z-Wave JS UI's login check. It calls Z-Wave JS UI's own socket.io
-// API (refreshNeighbors), which Z-Wave JS UI authenticates, rate-limits
-// (once per 60 s) and runs with the radio briefly paused.
+// Every /toposite/api call sends Z-Wave JS UI's login token (if any); TopoSite
+// accepts exactly the logins Z-Wave JS UI accepts (lib/auth.js).
+//
+// "Refresh neighbors" calls Z-Wave JS UI's own socket.io API (refreshNeighbors),
+// which Z-Wave JS UI authenticates, rate-limits (once per 60 s) and runs with
+// the radio briefly paused.
 
 import {
     autoLayout, buildLinks, nodeColor, nodeLabel, mainRoute, rateColor, rateLabel,
@@ -15,23 +20,22 @@ import {
 
 /* global L, io */
 
-const SIZE = 1000
+const GRID_SIZE = 1000
 const POLL_MS = 30_000
 const REFRESH_COOLDOWN_MS = 60_000
+const PLAN_KEY = 'toposite.plan'
 // Z-Wave JS UI's root, as the browser sees it (keeps working behind a path prefix)
 const ZUI_BASE = location.pathname.replace(/toposite\/.*$/, '')
-// Z-Wave JS UI's history fallback rewrites any GET whose Accept header contains
-// */* (plain fetch) to its SPA page; Accept starting with application/json skips it.
-const JSON_GET = { cache: 'no-store', headers: { Accept: 'application/json' } }
+const LOGIN_LINK = `<a href="${ZUI_BASE}" target="_blank">log in to Z-Wave JS UI</a>`
 
-const map = L.map('map', { crs: L.CRS.Simple, minZoom: -3, maxZoom: 3, zoomSnap: 0.25, attributionControl: false })
-const bounds = [[0, 0], [SIZE, SIZE]]
-map.fitBounds(bounds, { padding: [20, 20] })
-const labelZoom = map.getZoom() + 0.75
+const map = L.map('map', { crs: L.CRS.Simple, minZoom: -5, maxZoom: 3, zoomSnap: 0.25, attributionControl: false })
 
-L.imageOverlay(gridImage(), bounds, { opacity: 0.6 }).addTo(map)
+// Background images get their own pane under the overlay pane (z 400), so they
+// always sit beneath route lines no matter when they're added.
+map.createPane('ts-background').style.zIndex = 300
 
 const layers = {
+    background: L.layerGroup().addTo(map),
     routes: L.layerGroup().addTo(map),
     nlwr: L.layerGroup(),
     neighbors: L.layerGroup().addTo(map),
@@ -44,43 +48,130 @@ L.control.layers(null, {
     'Nodes': layers.nodes,
 }, { collapsed: false, position: 'topright' }).addTo(map)
 
-map.on('zoomend', applyLabelZoom)
-applyLabelZoom()
+const state = {
+    nodes: [],
+    layout: { plans: [], placements: [] },
+    planId: readPref(PLAN_KEY),
+    shownPlanId: undefined, // plan the view was last fitted to
+    imageUrls: new Map(), // planId → object URL of the fetched image
+    labelZoom: 0,
+}
 
-const statusPanel = addStatusPanel()
+const panel = addPanel()
 addLegend()
+map.on('zoomend', applyLabelZoom)
 
-let lastJSON = ''
-loadNodes()
-setInterval(loadNodes, POLL_MS)
+let lastNodesJSON = ''
+let lastLayoutJSON = ''
+reload()
+setInterval(reload, POLL_MS)
 
-// ---------------------------------------------------------------- data
+// ---------------------------------------------------------------- API
 
-async function loadNodes() {
-    try {
-        const res = await fetch('api/nodes', JSON_GET)
-        const body = await res.json()
-        if (!body.success) throw new Error(body.message || 'API error')
-        const json = JSON.stringify(body.data)
-        if (json !== lastJSON) {
-            lastJSON = json
-            draw(body.data)
-        }
-        statusPanel.setSummary(body.data)
-    } catch (error) {
-        statusPanel.setStatus(`Can't read nodes: ${error.message}`)
+/** fetch() a TopoSite API path with Z-Wave JS UI's login token. Returns `data`, throws on failure. */
+async function api(path, options = {}) {
+    const headers = { Accept: 'application/json', ...options.headers }
+    const token = storedToken()
+    if (token) headers.Authorization = `Bearer ${token}`
+    const res = await fetch(`api/${path}`, { cache: 'no-store', ...options, headers })
+    if (options.raw) {
+        if (!res.ok) throw await apiError(res)
+        return res
     }
+    const body = await res.json().catch(() => ({ success: false, message: `HTTP ${res.status}` }))
+    if (!body.success) throw Object.assign(new Error(body.message || `HTTP ${res.status}`), { auth: res.status === 401 })
+    return body.data
+}
+
+async function apiError(res) {
+    const body = await res.json().catch(() => ({}))
+    return Object.assign(new Error(body.message || `HTTP ${res.status}`), { auth: res.status === 401 })
+}
+
+function explain(error, what) {
+    return error.auth
+        ? `${what}: ${esc(error.message)} — ${LOGIN_LINK} in this browser, then reload.`
+        : `${what}: ${esc(error.message)}`
+}
+
+async function reload() {
+    try {
+        const [nodes, layout] = await Promise.all([api('nodes'), api('layout')])
+        const nodesJSON = JSON.stringify(nodes)
+        const layoutJSON = JSON.stringify(layout)
+        if (nodesJSON !== lastNodesJSON || layoutJSON !== lastLayoutJSON) {
+            lastNodesJSON = nodesJSON
+            lastLayoutJSON = layoutJSON
+            state.nodes = nodes
+            state.layout = layout
+            await draw()
+        }
+        panel.setSummary(nodes)
+        panel.setPlans(layout.plans, currentPlan()?.id)
+    } catch (error) {
+        panel.setStatus(explain(error, "Can't load the map"))
+    }
+}
+
+function currentPlan() {
+    const plans = state.layout.plans
+    return plans.find((p) => p.id === state.planId) ?? plans[0] ?? null
 }
 
 // ---------------------------------------------------------------- drawing
 
-function draw(nodes) {
-    for (const g of Object.values(layers)) g.clearLayers()
-    const pos = autoLayout(nodes, SIZE)
-    const byId = new Map(nodes.map((n) => [n.id, n]))
+async function draw() {
+    const plan = currentPlan()
+    const width = plan?.widthPx ?? GRID_SIZE
+    const height = plan?.heightPx ?? GRID_SIZE
+    const bounds = [[0, 0], [height, width]]
+
+    // Background: plan image, or the placeholder grid
+    layers.background.clearLayers()
+    if (plan) {
+        const url = await planImageUrl(plan).catch((error) => {
+            panel.setStatus(explain(error, `Can't load image for ${esc(plan.name)}`))
+            return null
+        })
+        if (url) L.imageOverlay(url, bounds, { pane: 'ts-background' }).addTo(layers.background)
+    } else {
+        L.imageOverlay(gridImage(), bounds, { opacity: 0.6, pane: 'ts-background' }).addTo(layers.background)
+    }
+    if (state.shownPlanId !== (plan?.id ?? null)) {
+        state.shownPlanId = plan?.id ?? null
+        map.fitBounds(bounds, { padding: [20, 20] })
+        state.labelZoom = map.getZoom() + 0.75
+        applyLabelZoom()
+    }
+
+    // Positions: saved placements on this plan, auto-layout for the rest
+    const placed = new Map()
+    for (const p of state.layout.placements) {
+        if (plan && p.planId === plan.id) placed.set(p.deviceKey, [height - p.y, p.x])
+    }
+    const side = Math.min(width, height) * 0.9
+    const auto = autoLayout(state.nodes, side)
+    const pos = new Map()
+    for (const n of state.nodes) {
+        const saved = n.key && placed.get(n.key)
+        if (saved) {
+            pos.set(n.id, saved)
+        } else {
+            const [y, x] = auto.get(n.id) ?? [side / 2, side / 2]
+            pos.set(n.id, [y + (height - side) / 2, x + (width - side) / 2])
+        }
+    }
+
+    drawLinks(pos)
+    drawNodes(pos, plan, placed, height)
+}
+
+function drawLinks(pos) {
+    for (const g of [layers.routes, layers.nlwr, layers.neighbors]) g.clearLayers()
+    const byId = new Map(state.nodes.map((n) => [n.id, n]))
     const name = (id) => esc(byId.get(id)?.name ?? `NodeID ${id}`)
 
-    for (const l of buildLinks(nodes)) {
+    for (const l of buildLinks(state.nodes)) {
         const a = pos.get(l.a)
         const b = pos.get(l.b)
         if (!a || !b) continue
@@ -105,17 +196,52 @@ function draw(nodes) {
                 .addTo(lwr ? layers.routes : layers.nlwr)
         }
     }
+}
 
-    for (const n of nodes) {
+function drawNodes(pos, plan, placed, height) {
+    layers.nodes.clearLayers()
+    for (const n of state.nodes) {
         const p = pos.get(n.id)
         if (!p) continue
-        L.marker(p, { icon: nodeIcon(n), keyboard: false })
-            .bindTooltip(nodeTooltip(n), { direction: 'top', offset: [0, -14] })
+        const isPlaced = !!(n.key && placed.has(n.key))
+        const marker = L.marker(p, {
+            icon: nodeIcon(n, isPlaced || !plan),
+            keyboard: false,
+            draggable: !!(plan && n.key),
+        })
+            .bindTooltip(nodeTooltip(n, plan, isPlaced), { direction: 'top', offset: [0, -14] })
             .addTo(layers.nodes)
+
+        if (!plan || !n.key) continue
+        marker.on('dragend', async () => {
+            const { lat, lng } = marker.getLatLng()
+            try {
+                await api('placements', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceKey: n.key, planId: plan.id, x: lng, y: height - lat }),
+                })
+                panel.setStatus(`Placed ${esc(n.name)}.`)
+            } catch (error) {
+                panel.setStatus(explain(error, `Couldn't save ${esc(n.name)}`))
+            }
+            reload()
+        })
+        if (isPlaced) {
+            marker.on('contextmenu', async () => {
+                try {
+                    await api(`placements/${encodeURIComponent(n.key)}`, { method: 'DELETE' })
+                    panel.setStatus(`${esc(n.name)} back to auto-layout.`)
+                } catch (error) {
+                    panel.setStatus(explain(error, `Couldn't unplace ${esc(n.name)}`))
+                }
+                reload()
+            })
+        }
     }
 }
 
-function nodeIcon(n) {
+function nodeIcon(n, solid) {
     const color = nodeColor(n)
     const stroke = n.status === 'ok' ? '#222' : '#fff'
     let shape
@@ -127,14 +253,14 @@ function nodeIcon(n) {
         shape = `<rect x="3" y="3" width="18" height="18" rx="2" fill="${color}" stroke="${stroke}" stroke-width="1.5"/>`
     }
     return L.divIcon({
-        className: 'ts-node',
+        className: `ts-node${solid ? '' : ' ts-unplaced'}`,
         iconSize: [24, 24],
         iconAnchor: [12, 12],
         html: `<svg width="24" height="24" viewBox="0 0 24 24">${shape}</svg><span class="lbl">${esc(nodeLabel(n))}</span>`,
     })
 }
 
-function nodeTooltip(n) {
+function nodeTooltip(n, plan, isPlaced) {
     const route = mainRoute(n)
     const lines = [`<b>${esc(nodeLabel(n))}</b> (node ${n.id})`]
     if (n.location) lines.push(esc(n.location))
@@ -150,11 +276,68 @@ function nodeTooltip(n) {
     }
     if (n.neighbors.length) lines.push(`Neighbors: ${n.neighbors.join(', ')}`)
     if (n.unknownNeighbors?.length) lines.push(`Stale neighbor IDs (no such node): ${n.unknownNeighbors.join(', ')}`)
+    if (plan) {
+        lines.push(`<span class="muted">${isPlaced ? 'Drag to move · right-click to unplace' : 'Not placed — drag onto the plan'}</span>`)
+    }
     return lines.join('<br>')
 }
 
 function applyLabelZoom() {
-    map.getContainer().classList.toggle('ts-labels', map.getZoom() >= labelZoom)
+    map.getContainer().classList.toggle('ts-labels', map.getZoom() >= state.labelZoom)
+}
+
+/** Plan images go through api() so the login token is sent; shown via an object URL. */
+async function planImageUrl(plan) {
+    const cached = state.imageUrls.get(plan.id)
+    if (cached) return cached
+    const res = await api(`plans/${plan.id}/image`, { raw: true, headers: { Accept: 'image/*' } })
+    const url = URL.createObjectURL(await res.blob())
+    state.imageUrls.set(plan.id, url)
+    return url
+}
+
+// ---------------------------------------------------------------- plans
+
+async function uploadPlan(file) {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+        return panel.setStatus('Use a PNG, JPEG or WebP image.')
+    }
+    if (file.size > 25 * 1024 * 1024) {
+        return panel.setStatus('That image is over 25 MB — export a smaller one.')
+    }
+    panel.setStatus(`Uploading ${esc(file.name)}…`)
+    try {
+        const bitmap = await createImageBitmap(file)
+        const { width, height } = bitmap
+        bitmap.close()
+        const name = file.name.replace(/\.[^.]+$/, '')
+        const qs = new URLSearchParams({ name, widthPx: width, heightPx: height })
+        const plan = await api(`plans?${qs}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file })
+        selectPlan(plan.id)
+        panel.setStatus(`Added ${esc(plan.name)} (${width} × ${height}). Drag nodes onto it.`)
+    } catch (error) {
+        panel.setStatus(explain(error, 'Upload failed'))
+    }
+}
+
+async function deletePlan(plan) {
+    try {
+        await api(`plans/${plan.id}`, { method: 'DELETE' })
+        const url = state.imageUrls.get(plan.id)
+        if (url) URL.revokeObjectURL(url)
+        state.imageUrls.delete(plan.id)
+        panel.setStatus(`Deleted ${esc(plan.name)} and its placements.`)
+    } catch (error) {
+        panel.setStatus(explain(error, 'Delete failed'))
+    }
+    reload()
+}
+
+function selectPlan(id) {
+    state.planId = id
+    writePref(PLAN_KEY, id)
+    lastLayoutJSON = '' // force a redraw
+    reload()
 }
 
 // ---------------------------------------------------------------- refresh neighbors
@@ -162,14 +345,16 @@ function applyLabelZoom() {
 async function refreshNeighbors(button) {
     button.disabled = true
     const done = (msg, cooldown = false) => {
-        statusPanel.setStatus(msg)
+        panel.setStatus(msg)
         if (cooldown) setTimeout(() => { button.disabled = false }, REFRESH_COOLDOWN_MS)
         else button.disabled = false
     }
 
     let auth
     try {
-        const res = await fetch(`${ZUI_BASE}api/auth-enabled`, JSON_GET)
+        // Z-Wave JS UI's history fallback rewrites any GET whose Accept header contains
+        // */* (plain fetch) to its SPA page; Accept starting with application/json skips it.
+        const res = await fetch(`${ZUI_BASE}api/auth-enabled`, { cache: 'no-store', headers: { Accept: 'application/json' } })
         const authEnabled = (await res.json()).data === true
         if (authEnabled) {
             const token = storedToken()
@@ -179,10 +364,10 @@ async function refreshNeighbors(button) {
             auth = { token }
         }
     } catch (error) {
-        return done(`Can't reach Z-Wave JS UI: ${error.message}`)
+        return done(`Can't reach Z-Wave JS UI: ${esc(error.message)}`)
     }
 
-    statusPanel.setStatus('Connecting to Z-Wave JS UI…')
+    panel.setStatus('Connecting to Z-Wave JS UI…')
     const socket = io({ path: `${ZUI_BASE}socket.io`, auth, reconnection: false, timeout: 10_000 })
     try {
         await new Promise((resolve, reject) => {
@@ -193,11 +378,11 @@ async function refreshNeighbors(button) {
         socket.disconnect()
         const msg = /auth/i.test(error.message)
             ? `Z-Wave JS UI refused the login — <a href="${ZUI_BASE}" target="_blank">log in again</a>, then retry.`
-            : `Can't connect to Z-Wave JS UI: ${error.message}`
+            : `Can't connect to Z-Wave JS UI: ${esc(error.message)}`
         return done(msg)
     }
 
-    statusPanel.setStatus('Reading neighbors from the controller (radio paused briefly)…')
+    panel.setStatus('Reading neighbors from the controller (radio paused briefly)…')
     const result = await new Promise((resolve) => {
         socket.timeout(120_000).emit('ZWAVE_API', { api: 'refreshNeighbors', args: [] }, (err, response) => {
             resolve(err ? { success: false, message: 'timed out waiting for Z-Wave JS UI' } : response)
@@ -206,7 +391,7 @@ async function refreshNeighbors(button) {
     socket.disconnect()
 
     if (!result?.success) return done(`Refresh failed: ${esc(result?.message ?? 'unknown error')}`, /60 seconds/.test(result?.message ?? ''))
-    await loadNodes()
+    await reload()
     done(`Neighbors refreshed at ${new Date().toLocaleTimeString()}.`, true)
 }
 
@@ -221,31 +406,65 @@ function storedToken() {
 
 // ---------------------------------------------------------------- controls
 
-function addStatusPanel() {
-    let summaryEl, statusEl
+function addPanel() {
+    let els
+    let armedDelete = null
     const Panel = L.Control.extend({
         onAdd() {
             const div = L.DomUtil.create('div', 'ts-panel')
             div.innerHTML = `<h1>TopoSite</h1>
                 <div class="muted" id="ts-summary">Loading…</div>
-                <div style="margin-top:6px"><button type="button" id="ts-refresh"
+                <div class="ts-row">
+                    <select id="ts-plan" title="Background image"></select>
+                    <button type="button" id="ts-add" title="Upload a PNG, JPEG or WebP image as a new background">Add image…</button>
+                    <button type="button" id="ts-del" title="Delete this background and every node position on it">Delete</button>
+                    <input type="file" id="ts-file" accept="image/png,image/jpeg,image/webp" hidden>
+                </div>
+                <div class="ts-row"><button type="button" id="ts-refresh"
                     title="Asks Z-Wave JS UI to re-read every node's neighbor list from the controller. The radio pauses for a few seconds; allowed once a minute.">Refresh neighbors</button></div>
                 <div class="muted" id="ts-status"></div>`
             L.DomEvent.disableClickPropagation(div)
-            summaryEl = div.querySelector('#ts-summary')
-            statusEl = div.querySelector('#ts-status')
-            const btn = div.querySelector('#ts-refresh')
-            btn.addEventListener('click', () => refreshNeighbors(btn))
+            L.DomEvent.disableScrollPropagation(div)
+            els = Object.fromEntries(['summary', 'plan', 'add', 'del', 'file', 'refresh', 'status']
+                .map((k) => [k, div.querySelector(`#ts-${k}`)]))
+            els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
+            els.add.addEventListener('click', () => els.file.click())
+            els.file.addEventListener('change', () => {
+                const file = els.file.files[0]
+                els.file.value = ''
+                if (file) uploadPlan(file)
+            })
+            els.plan.addEventListener('change', () => selectPlan(els.plan.value))
+            // Two clicks to delete, instead of a confirm() dialog
+            els.del.addEventListener('click', () => {
+                const plan = currentPlan()
+                if (!plan) return
+                if (armedDelete !== plan.id) {
+                    armedDelete = plan.id
+                    els.del.textContent = 'Really delete?'
+                    setTimeout(() => { armedDelete = null; els.del.textContent = 'Delete' }, 4000)
+                    return
+                }
+                armedDelete = null
+                els.del.textContent = 'Delete'
+                deletePlan(plan)
+            })
             return div
         },
     })
     new Panel({ position: 'topleft' }).addTo(map)
     return {
-        setStatus(html) { statusEl.innerHTML = html },
+        setStatus(html) { els.status.innerHTML = html },
         setSummary(nodes) {
             const dead = nodes.filter((n) => n.status !== 'ok').length
             const withNb = nodes.filter((n) => n.neighbors.length).length
-            summaryEl.textContent = `${nodes.length} nodes · ${dead} dead/failed · neighbors known for ${withNb}`
+            els.summary.textContent = `${nodes.length} nodes · ${dead} dead/failed · neighbors known for ${withNb}`
+        },
+        setPlans(plans, selectedId) {
+            els.plan.hidden = plans.length === 0
+            els.del.hidden = plans.length === 0
+            els.plan.innerHTML = plans.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')
+            if (selectedId) els.plan.value = selectedId
         },
     }
 }
@@ -258,7 +477,8 @@ function addLegend() {
             div.innerHTML = `<h2>Shape</h2>${shapes.map(([s, t]) => `<div><span>${s}</span>${t}</div>`).join('')}
                 <h2>Node color = hops</h2>${HOP_LEGEND.map(([t, c]) => `<div><span class="sw" style="background:${c}"></span>${t}</div>`).join('')}
                 <h2>Link color = data rate</h2>${RATE_LEGEND.map(([t, c]) => `<div><span class="ln" style="border-color:${c}"></span>${t}</div>`).join('')}
-                <div><span class="ln" style="border-top-style:dashed;border-color:#888"></span>backup route</div>`
+                <div><span class="ln" style="border-top-style:dashed;border-color:#888"></span>backup route</div>
+                <div><span class="sw" style="background:#888;opacity:.45"></span>faded = not placed yet</div>`
             return div
         },
     })
@@ -266,6 +486,14 @@ function addLegend() {
 }
 
 // ---------------------------------------------------------------- helpers
+
+function readPref(key) {
+    try { return localStorage.getItem(key) } catch { return null }
+}
+
+function writePref(key, value) {
+    try { localStorage.setItem(key, value) } catch { /* private mode: not remembered */ }
+}
 
 function starPoints(cx, cy, outer, inner) {
     const pts = []
@@ -286,14 +514,14 @@ function hexPoints(cx, cy, r) {
     return pts.join(' ')
 }
 
-/** Placeholder background until floor plans can be uploaded: a light grid. */
+/** Placeholder background when no plan image exists: a light grid. */
 function gridImage() {
-    const step = SIZE / 20
+    const step = GRID_SIZE / 20
     let lines = ''
-    for (let i = 0; i <= SIZE; i += step) {
-        lines += `<line x1="${i}" y1="0" x2="${i}" y2="${SIZE}"/><line x1="0" y1="${i}" x2="${SIZE}" y2="${i}"/>`
+    for (let i = 0; i <= GRID_SIZE; i += step) {
+        lines += `<line x1="${i}" y1="0" x2="${i}" y2="${GRID_SIZE}"/><line x1="0" y1="${i}" x2="${GRID_SIZE}" y2="${i}"/>`
     }
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}"><g stroke="#999" stroke-width="1" opacity="0.35">${lines}</g></svg>`
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${GRID_SIZE}" height="${GRID_SIZE}"><g stroke="#999" stroke-width="1" opacity="0.35">${lines}</g></svg>`
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
 

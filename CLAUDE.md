@@ -53,7 +53,10 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | Path | Role |
 |---|---|
 | `index.js` | Plugin entry: default-export class Z-Wave JS UI constructs with `{zwave, mqtt, app, logger}`; registers routes under `/toposite/` |
-| `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model |
+| `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model; adds `key` = `zwave:<homeId>:<nodeId>` from `zwave.homeHex` |
+| `lib/auth.js` | **The only file that reads Z-Wave JS UI's auth files** (`settings.json` `gateway.authEnabled`, `.session-secret` / `SESSION_SECRET`, `users.json`, `TRUSTED_API_LISTEN`) — accepts exactly the logins Z-Wave JS UI accepts; HS256 JWT check with `node:crypto` |
+| `lib/layout.js` | Plans + placements (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
+| `lib/store.js` | Store dir resolution (`TOPOSITE_STORE_DIR` → `STORE_DIR` → `<cwd>/store` → two dirs above the plugin; must contain `settings.json`), atomic JSON writes |
 | `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4 — no SN, skipped by sn_audit) |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
 | `ROADMAP.md` | Zoom levels (satellite → floor plan → room panorama), data model, phases |
@@ -62,9 +65,18 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 
 ### Plugin API (current)
 
+All `/toposite/api/*` routes: `401 {code:'auth'}` unless `lib/auth.js` allows
+the request; the static page files are open (no data in them).
+
 | Route | Returns |
 |---|---|
 | `GET /toposite/` | Map page (static files from `public/`; `/toposite` redirects to `/toposite/`) |
+| `GET /toposite/api/layout` | `{success, data: {version, plans[], placements[]}}` (ROADMAP data model) |
+| `POST /toposite/api/plans?name&widthPx&heightPx` | Body = raw PNG/JPEG/WebP bytes (≤ 25 MB; size decoded by the browser) → new plan |
+| `DELETE /toposite/api/plans/:id` | Deletes the plan, its image and its placements |
+| `GET /toposite/api/plans/:id/image` | The plan image (the page fetches it with the token → object URL) |
+| `PUT /toposite/api/placements` | JSON `{deviceKey, planId, x, y}` (plan pixels, clamped) — one placement per device |
+| `DELETE /toposite/api/placements/:deviceKey` | Back to auto-layout |
 | `GET /toposite/api/nodes` | `{success, data: [node]}` — node: `id, name, location, role (controller/listening/sleeping), isListening, isFrequentListening, isRouting, status (ok/dead/failed), neighbors[], unknownNeighbors[], lwr, nlwr` (routes: `hops, repeaters[], rssi, repeaterRSSI[], protocolDataRate, failedBetween`). Virtual nodes (broadcast 255, multicast) are skipped. RSSI is dBm, `'saturated'`, `'no-signal'` or `null` (zwave-js RssiError 126/125/127). `unknownNeighbors` = IDs in the controller's neighbor table with no node (removed nodes) |
 
 ---
@@ -187,8 +199,12 @@ SNs, bump version, commit, and push.
   georeferenced for the satellite level. Serve Leaflet from the plugin (no
   CDN) — many Z-Wave JS UI installs are LAN-only.
 - **Layout storage:** plans, rooms, panoramas and placements as JSON in Z-Wave
-  JS UI's store dir, images alongside, so they persist with Z-Wave JS UI's own
-  data *(path resolution TBD)*.
+  JS UI's store dir — `<store>/toposite/layout.json`, images in
+  `<store>/toposite/images/` — outside the plugin dir so redeploys never touch
+  it, and backed up with Z-Wave JS UI's store.
+- **TopoSite auth = Z-Wave JS UI auth** (2026-10-09): every API route checks
+  Z-Wave JS UI's own login token (`lib/auth.js`); open only when Z-Wave JS UI's
+  auth is off, exactly like Z-Wave JS UI itself. No separate TopoSite users.
 - **Mesh health is core scope.** Link styling must flag problems (weak or
   one-way links, nodes with too few neighbors, dead/isolated nodes).
   Exact styling is decided after the user reviews a rendered map.
@@ -260,16 +276,17 @@ must not clash with the meanings above.
 
 ## Known Issues / Pending Work
 
-- **No auth on plugin routes.** Z-Wave JS UI's login doesn't cover them. Keep
-  routes read-only; before any write route (saving positions, uploading floor
-  plans) add an auth check or an explicit "trusted network only" setting.
+- **Auth (done 2026-10-09):** Z-Wave JS UI's login doesn't cover plugin
+  routes, so `lib/auth.js` re-implements its check. It depends on Z-Wave JS
+  UI's store file names and JWT setup — re-check on upstream auth changes
+  (see watch list). Static page files stay open by design.
 - **Forced neighbor refresh** (2026-10-09): map page button calls Z-Wave JS
   UI's authenticated socket.io `ZWAVE_API refreshNeighbors` using the browser's
   Z-Wave JS UI login (`localStorage.user.token`) — no TopoSite route. Works
   live on wopr3 (2026-10-09) with Z-Wave JS UI auth off and on (logged in →
   refresh; logged out → "log in first"); button greys out for the 60 s lock. Fetches to Z-Wave JS UI's own routes must send
   `Accept: application/json`, or its history fallback returns the SPA page.
-- Layout storage path inside Z-Wave JS UI's store dir not yet resolved.
+- Background upload + node dragging (2026-10-09): built and tested (unit + real Express with Z-Wave JS UI's middleware order and `jsonwebtoken`-signed tokens), **not yet tried live**.
 - Live-tested on Z-Wave JS UI 11.24.2 (wopr3, 2026-10-09): loads, `/toposite/api/nodes` returns the mesh, map page renders, neighbor refresh works.
 
 ---

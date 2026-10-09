@@ -55,14 +55,28 @@ To check it loaded, turn on **Settings → General → Log enabled** and look fo
 
 TopoSite's pages are served by Z-Wave JS UI under `/toposite/`.
 
-> **Note:** Z-Wave JS UI's login does not cover plugin pages. Don't expose
-> Z-Wave JS UI to untrusted networks while TopoSite is installed.
+> **Note:** TopoSite's data and changes are protected by Z-Wave JS UI's own
+> login when that login is turned on. With Z-Wave JS UI's auth off, TopoSite —
+> like Z-Wave JS UI itself — is open to anyone who can reach it.
 
 ---
 
 ## Usage
 
-*(Fill in when implemented.)*
+Open `http://<zwave-js-ui-host>:8091/toposite/`.
+
+- **Add image…** uploads a background: a floor plan, site plan or a satellite
+  screenshot (PNG, JPEG or WebP, up to 25 MB). Several images can be added and
+  switched with the drop-down.
+- **Drag a node** onto the image to place it; positions are saved in Z-Wave JS
+  UI's store (`store/toposite/`), so they're kept with its backups.
+  Right-click a placed node to send it back to the automatic layout (faded).
+- **Refresh neighbors** asks Z-Wave JS UI to re-read every node's neighbor list
+  (the radio pauses for a few seconds; once a minute at most).
+- The check boxes at top right toggle routes, backup routes, neighbor lines and nodes.
+
+If Z-Wave JS UI's login is turned on, TopoSite requires the same login: log in
+to Z-Wave JS UI in the same browser first.
 
 ---
 

@@ -29,7 +29,7 @@ directions are *derived* from them through per-plan and per-room transforms.
 | **Placement** (one per device) | `deviceKey, planId, x, y, heightM?, panoAdjust? {yawDeg, pitchDeg}` | 3D position = plan (x, y) + `heightM`. Continuous coordinates: precision is the plan's pixel size (e.g. 4000 px across 20 m ≈ 5 mm). Missing `heightM` defaults by device type (outlet low, switch ~1.2 m, sensor near ceiling). `panoAdjust` is a small per-panorama correction for when the photo and the plan disagree. |
 | **deviceKey** | `zwave:<homeId>:<nodeId>` | Namespaced so Zigbee (`zigbee:<ieee>`) and IP (`ip:<mac>`) devices fit later. Node IDs get reused after exclude/include, so re-inclusion needs a "re-link this placement" step. |
 
-Stored as JSON in Z-Wave JS UI's store dir (path TBD); images alongside it.
+Stored as JSON in Z-Wave JS UI's store dir: `<store>/toposite/layout.json`, images in `<store>/toposite/images/`.
 
 ---
 
@@ -41,7 +41,8 @@ Stored as JSON in Z-Wave JS UI's store dir (path TBD); images alongside it.
 - Z-Wave JS UI visual language for nodes and links (see CLAUDE.md).
 - Mesh-health flags — styling settled after the user reviews a rendered map.
 - Labels and RSSI shown only past a zoom threshold or on hover, to avoid clutter.
-- **Prerequisite:** TopoSite's own auth check before any write route (positions, uploads).
+- **Prerequisite (done 2026-10-09):** auth check before any write route — TopoSite accepts exactly the logins Z-Wave JS UI accepts.
+- *Done:* background image upload (PNG/JPEG/WebP) and drag-to-place, saved server-side.
 
 ## Phase 2 — Room Panoramas
 

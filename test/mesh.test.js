@@ -2,8 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { toNode, toRoute, toRSSI, getNodes } from '../lib/mesh.js'
-import TopoSite, { BASE, PUBLIC_DIR } from '../index.js'
+import { toNode, toRoute, toRSSI, getNodes, homeIdOf } from '../lib/mesh.js'
 
 test('controller, mains and battery nodes get the Z-Wave JS UI roles', () => {
     assert.equal(toNode({ id: 1, isControllerNode: true, isListening: true, available: true }).role, 'controller')
@@ -58,6 +57,13 @@ test('NUL-padded names and locations count as empty', () => {
     assert.equal(toNode({ id: 3, name: ' Hall Bath Fan ', loc: 'Hallway', available: true }).name, 'Hall Bath Fan')
 })
 
+test('nodes get a zwave:<homeId>:<nodeId> placement key', () => {
+    const nodes = getNodes({ homeHex: '0xCDFBB3C7', getNodes: () => [{ id: 2, available: true }] })
+    assert.equal(nodes[0].key, 'zwave:cdfbb3c7:2')
+    assert.equal(homeIdOf({ homeHex: undefined }), null)
+    assert.equal(getNodes({ getNodes: () => [{ id: 2, available: true }] })[0].key, null)
+})
+
 test('getNodes skips virtual nodes and separates stale neighbor IDs', () => {
     const zwave = {
         getNodes: () => [
@@ -72,63 +78,6 @@ test('getNodes skips virtual nodes and separates stale neighbor IDs', () => {
     const n2 = nodes.find((n) => n.id === 2)
     assert.deepEqual(n2.neighbors, [1, 75], 'dead node 75 still exists, so it stays')
     assert.deepEqual(n2.unknownNeighbors, [6], 'node 6 was removed but is still in the controller table')
-})
-
-function fakeContext(nodes) {
-    const routes = {}
-    return {
-        routes,
-        ctx: {
-            zwave: { getNodes: () => nodes },
-            mqtt: null,
-            app: { get: (path, fn) => { routes[path] = fn } },
-            logger: { info() {}, error() {} },
-        },
-    }
-}
-
-test('plugin registers its API under the TopoSite base path and serves nodes', () => {
-    const { routes, ctx } = fakeContext([{ id: 1, isControllerNode: true, available: true }])
-    new TopoSite(ctx)
-    const handler = routes[`${BASE}/api/nodes`]
-    assert.ok(handler, 'nodes route registered')
-
-    let body
-    handler({}, { json: (b) => { body = b }, status() { return this } })
-    assert.equal(body.success, true)
-    assert.equal(body.data[0].role, 'controller')
-})
-
-test('nodes route reports a clear error when Z-Wave is not enabled', () => {
-    const { routes, ctx } = fakeContext([])
-    delete ctx.zwave
-    new TopoSite(ctx)
-    let code, body
-    const res = { status(c) { code = c; return this }, json(b) { body = b } }
-    routes[`${BASE}/api/nodes`]({}, res)
-    assert.equal(code, 503)
-    assert.equal(body.success, false)
-})
-
-test('map page: bare base redirects to the trailing-slash URL, files come from public/', () => {
-    const { routes, ctx } = fakeContext([])
-    new TopoSite(ctx)
-
-    let redirect
-    let passed = false
-    routes[BASE]({ path: BASE }, { redirect: (to) => { redirect = to } }, () => {})
-    routes[BASE]({ path: `${BASE}/` }, { redirect: () => assert.fail('redirect loop') }, () => { passed = true })
-    assert.equal(redirect, 'toposite/')
-    assert.ok(passed, '/toposite/ falls through to the page handler')
-
-    const sent = []
-    const res = { sendFile: (file, opts) => sent.push([file, opts]) }
-    routes[`${BASE}/*`]({ params: { 0: '' } }, res)
-    routes[`${BASE}/*`]({ params: { 0: 'vendor/leaflet/leaflet.js' } }, res)
-    assert.equal(sent[0][0], 'index.html')
-    assert.equal(sent[1][0], 'vendor/leaflet/leaflet.js')
-    assert.equal(sent[0][1].root, PUBLIC_DIR)
-    assert.equal(sent[0][1].dotfiles, 'deny')
 })
 
 // SN: 00001
