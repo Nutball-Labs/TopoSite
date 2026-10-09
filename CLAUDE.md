@@ -60,6 +60,7 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4, Leaflet-Geoman free 2.20.2 — no SN, skipped by sn_audit) |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
 | `ROADMAP.md` | Zoom levels (satellite → floor plan → room panorama), data model, phases |
+| `MAPS.md` | **Product definition (2026-10-09):** maps, reusable backgrounds, per-map positions and node lists, built-in Network Graph, data model v2 and migration, build order. Read before changing the UI or `layout.json` |
 | `scripts/sn_audit.sh` | Regenerates `sn_audit.txt` |
 | `scripts/gen_line_count.sh` | Daily line-count snapshot → `Line_Counts/` |
 

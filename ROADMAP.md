@@ -33,6 +33,9 @@ Stored as JSON in Z-Wave JS UI's store dir: `<store>/toposite/layout.json`, imag
 
 ---
 
+> **Maps:** how plans become reusable backgrounds and per-map views (node lists, default map,
+> built-in Network Graph) is defined in [MAPS.md](MAPS.md).
+
 ## Phase 1 — Floor-Plan Map (current)
 
 - Leaflet map page served by the plugin under `/toposite/`, Leaflet bundled (no CDN).
