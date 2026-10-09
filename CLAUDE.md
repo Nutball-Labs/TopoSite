@@ -266,7 +266,8 @@ must not clash with the meanings above.
 - **Forced neighbor refresh** (2026-10-09): map page button calls Z-Wave JS
   UI's authenticated socket.io `ZWAVE_API refreshNeighbors` using the browser's
   Z-Wave JS UI login (`localStorage.user.token`) — no TopoSite route. Works
-  live on wopr3 (2026-10-09). Fetches to Z-Wave JS UI's own routes must send
+  live on wopr3 (2026-10-09) with Z-Wave JS UI auth off and on (logged in →
+  refresh; logged out → "log in first"); button greys out for the 60 s lock. Fetches to Z-Wave JS UI's own routes must send
   `Accept: application/json`, or its history fallback returns the SPA page.
 - Layout storage path inside Z-Wave JS UI's store dir not yet resolved.
 - Live-tested on Z-Wave JS UI 11.24.2 (wopr3, 2026-10-09): loads, `/toposite/api/nodes` returns the mesh, map page renders, neighbor refresh works.
