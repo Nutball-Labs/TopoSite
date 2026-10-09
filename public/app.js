@@ -141,7 +141,7 @@ async function reload() {
             await draw()
         }
         panel.setSummary(nodes)
-        panel.setPlans(layout.plans, currentPlan()?.id)
+        panel.setPlans(layout.plans, currentPlan()?.id, layout.placements)
     } catch (error) {
         panel.setStatus(explain(error, "Can't load the map"))
     }
@@ -198,6 +198,7 @@ async function draw() {
 
     drawShapes(plan)
     drawLinks(pos)
+    hintOtherPlans(plan, placed)
     drawNodes(pos, plan, placed, height)
 }
 
@@ -276,6 +277,16 @@ function drawNodes(pos, plan, placed, height) {
             })
         }
     }
+}
+
+/** On a plan with nothing placed, say where the placements are (they're per plan). */
+function hintOtherPlans(plan, placed) {
+    if (!plan || placed.size) return
+    const elsewhere = state.layout.plans.filter((p) => p.id !== plan.id &&
+        state.layout.placements.some((pl) => pl.planId === p.id))
+    if (!elsewhere.length) return
+    panel.setStatus(`No nodes placed on ${esc(plan.name)} yet. Positions are saved per plan — yours are on ` +
+        `${elsewhere.map((p) => esc(p.name)).join(', ')}; pick it from the drop-down to see them.`)
 }
 
 function nodeIcon(n, solid) {
@@ -466,7 +477,8 @@ async function uploadPlan(file) {
         const qs = new URLSearchParams({ name, widthPx: width, heightPx: height })
         const plan = await api(`plans?${qs}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file })
         selectPlan(plan.id)
-        panel.setStatus(`Added ${esc(plan.name)} (${width} × ${height}). Drag nodes onto it.`)
+        panel.setStatus(`Added ${esc(plan.name)} (${width} × ${height}) as a new plan with its own node positions — ` +
+            'positions on your other plans are unchanged (switch with the drop-down).')
     } catch (error) {
         panel.setStatus(explain(error, 'Upload failed'))
     }
@@ -619,11 +631,15 @@ function addPanel() {
             const withNb = nodes.filter((n) => n.neighbors.length).length
             els.summary.textContent = `${nodes.length} nodes · ${dead} dead/failed · neighbors known for ${withNb}`
         },
-        setPlans(plans, selectedId) {
+        setPlans(plans, selectedId, placements = []) {
             els.plan.hidden = plans.length === 0
             els.del.hidden = plans.length === 0
             els.draw.hidden = plans.length === 0
-            els.plan.innerHTML = plans.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')
+            // Each plan keeps its own node positions — show how many, so a plan with
+            // none doesn't look like the positions were lost.
+            const count = (id) => placements.filter((pl) => pl.planId === id).length
+            els.plan.innerHTML = plans.map((p) =>
+                `<option value="${esc(p.id)}">${esc(p.name)} (${count(p.id)} placed)</option>`).join('')
             if (selectedId) els.plan.value = selectedId
         },
     }
