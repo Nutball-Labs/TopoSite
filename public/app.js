@@ -20,6 +20,9 @@ const POLL_MS = 30_000
 const REFRESH_COOLDOWN_MS = 60_000
 // Z-Wave JS UI's root, as the browser sees it (keeps working behind a path prefix)
 const ZUI_BASE = location.pathname.replace(/toposite\/.*$/, '')
+// Z-Wave JS UI's history fallback rewrites any GET whose Accept header contains
+// */* (plain fetch) to its SPA page; Accept starting with application/json skips it.
+const JSON_GET = { cache: 'no-store', headers: { Accept: 'application/json' } }
 
 const map = L.map('map', { crs: L.CRS.Simple, minZoom: -3, maxZoom: 3, zoomSnap: 0.25, attributionControl: false })
 const bounds = [[0, 0], [SIZE, SIZE]]
@@ -55,7 +58,7 @@ setInterval(loadNodes, POLL_MS)
 
 async function loadNodes() {
     try {
-        const res = await fetch('api/nodes', { cache: 'no-store' })
+        const res = await fetch('api/nodes', JSON_GET)
         const body = await res.json()
         if (!body.success) throw new Error(body.message || 'API error')
         const json = JSON.stringify(body.data)
@@ -166,7 +169,7 @@ async function refreshNeighbors(button) {
 
     let auth
     try {
-        const res = await fetch(`${ZUI_BASE}api/auth-enabled`, { cache: 'no-store' })
+        const res = await fetch(`${ZUI_BASE}api/auth-enabled`, JSON_GET)
         const authEnabled = (await res.json()).data === true
         if (authEnabled) {
             const token = storedToken()
