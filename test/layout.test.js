@@ -140,6 +140,26 @@ test('updatePlan renames, resizes blank plans and sets scale; image plans keep t
     await assert.rejects(layout.updatePlan('nope', { name: 'x' }), { status: 404 })
 })
 
+test('padTop/padLeft add room and move placements and shapes with the drawing; expect* guards retries', async () => {
+    const layout = await fresh()
+    const plan = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 3000 })
+    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 500, y: 600 })
+    await layout.setShapes(plan.id, [
+        { type: 'rect', x: 262, y: 354, w: 2475, h: 1292 },
+        { type: 'line', points: [[0, 0], [10, 20]] },
+        { type: 'label', x: 5, y: 6, text: 'BR 1' },
+    ])
+    const padded = await layout.updatePlan(plan.id, { padTop: 2100, expectHeightPx: 3000 })
+    assert.equal(padded.heightPx, 5100)
+    assert.equal(padded.widthPx, 3000)
+    const saved = await layout.load()
+    assert.deepEqual([saved.placements[0].x, saved.placements[0].y], [500, 2700])
+    assert.deepEqual(saved.shapes.map((sh) => sh.points ?? [sh.x, sh.y]), [[262, 2454], [[0, 2100], [10, 2120]], [5, 2106]])
+    await assert.rejects(layout.updatePlan(plan.id, { padTop: 2100, expectHeightPx: 3000 }), { status: 409 }, 'a retry is refused')
+    assert.equal((await layout.load()).plans[0].heightPx, 5100, 'and changes nothing')
+    await assert.rejects(layout.updatePlan(plan.id, { padTop: -1 }), { status: 400 })
+})
+
 test("store dir: env overrides, then <cwd>/store, then two levels above the plugin", async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'toposite-store-'))
     const store = path.join(root, 'store')

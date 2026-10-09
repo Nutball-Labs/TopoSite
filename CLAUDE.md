@@ -75,7 +75,7 @@ the request; the static page files are open (no data in them).
 | `POST /toposite/api/plans?name&widthPx&heightPx` | Body = raw PNG/JPEG/WebP bytes (≤ 25 MB; size decoded by the browser) → new plan |
 | `POST /toposite/api/plans/blank` | JSON `{name, widthPx, heightPx}` → blank plan (`image: null`) to draw on |
 | `PUT /toposite/api/plans/:id/shapes` | JSON `{shapes: [...]}` replaces the plan's drawing. Shapes (plan px): `rect {x,y,w,h}`, `circle {x,y,r}`, `line {points:[[x,y]…]}`, `label {x,y,text≤200}` |
-| `PATCH /toposite/api/plans/:id` | JSON, any of `{name, widthPx, heightPx, metersPerPixel}`. Size changes only on blank plans (409 on image plans); growing keeps all positions (top-left origin) |
+| `PATCH /toposite/api/plans/:id` | JSON, any of `{name, widthPx, heightPx, metersPerPixel, padTop, padLeft, expectWidthPx, expectHeightPx}`. Size changes only on blank plans (409 on image plans); growing keeps all positions (top-left origin). `padTop`/`padLeft` add room above/left and move the plan's placements and shapes with it; `expect*` refuses (409) unless the current size matches, so a pad is safe to retry |
 | `DELETE /toposite/api/plans/:id` | Deletes the plan, its image, placements and shapes |
 | `GET /toposite/api/plans/:id/image` | The plan image (the page fetches it with the token → object URL) |
 | `PUT /toposite/api/placements` | JSON `{deviceKey, planId, x, y}` (plan pixels, clamped) — one placement per device |
