@@ -113,7 +113,8 @@ shapes:      [{ id, backgroundId, type, … }]        # drawings belong to the b
 maps:        [{ id, name, backgroundId | null,
                 nodes: { start: include|exclude, exceptions: [deviceKey] },
                 view: { center, zoom, layers } }]
-placements:  [{ mapId, deviceKey, x, y }]
+placements:  [{ mapId, deviceKey | null, x, y, seen: { name, deviceId, dsk? },
+                placeholder?: { name, loc, deviceId, productLabel } }]
 ```
 
 - The built-in Network Graph map is stored like any other map, with
@@ -160,12 +161,111 @@ placements:  [{ mapId, deviceKey, x, y }]
 4. **Network Graph**: live layout as the built-in default.
 5. **Background library**: reuse, replace with keep/clear positions,
    delete-if-unused.
+6. **Import / export**: one map per file, reviewed matching, placeholders,
+   repair links (see below).
+
+## Import / export (agreed 2026-10-09)
+
+### Export: one map per file
+
+**Export map** on a map writes `<map name>.toposite`, a single JSON file
+holding:
+
+- **Header:** `format: "toposite-map"`, `version: 1`, `exportedAt`, and the
+  source's Z-Wave home ID and TopoSite version.
+- **The map:** name, node rule, view settings, and its **background** in full:
+  the image as base64 (with `imageRect`), size, scale, and the drawing's
+  shapes. The Network Graph map exports without a background.
+- **A node manifest:** one entry per node the map refers to (placed, or in its
+  exceptions), with a file-local `ref` and identity:
+  - `homeId`, `nodeId`
+  - `name`, `loc`
+  - `deviceId` (manufacturer-productType-productId), `productLabel`,
+    `manufacturer`, `firmwareVersion`
+  - role (listening/sleeping), `dsk` when available
+- **Placements and exceptions:** these refer to the manifest by `ref`, never
+  by `deviceKey`, so they can be remapped on import.
+
+### Import: always reviewed
+
+**Import map…** uploads a `.toposite` file. The server proposes a match for
+each manifest entry against the nodes on *this* install, strongest evidence
+first:
+
+| Confidence | Evidence |
+|---|---|
+| **Certain** | Same `dsk`. Or same home ID and node ID **and** same `deviceId` and name. |
+| **Likely** | Same name and same `deviceId` (any node ID or network). |
+| **Possible** | Same `deviceId` and same location. Or same name only. |
+| **None** | No candidate. |
+
+Each local node is proposed for at most one entry: the strongest evidence
+wins, and ties leave both unproposed.
+
+The **review screen** lists **every** entry, even certain ones:
+
+- what the file says (name, location, model, old node ID)
+- the proposed local node and its confidence, in a drop-down of all local
+  nodes, plus **No match — keep as placeholder**
+- filters: show all / unconfirmed / no match
+
+Nothing is created until you confirm. Confirming creates a **new** map; an
+import never overwrites an existing one. If the name is already taken,
+" (imported)" is added. The background is always created as a new
+background. Reusing an identical existing background is a later refinement.
+
+### Placeholders
+
+A placement whose entry is set to "No match" is kept as a **placeholder**:
+
+- It draws as a hollow, dashed marker labelled with the file's name and
+  model ("Thermostat — not linked") at its saved spot.
+- In edit mode, the node list shows placeholders. Choosing **Link to…** on
+  one assigns a local node, which takes that position. **Delete** removes it.
+- Placeholders have no links, are never counted as dead nodes, and don't
+  appear in exports.
+
+### Re-linking on the same install
+
+The same matching and review screen repairs a map **on this install** when
+devices change:
+
+- Each placement stores a small **identity snapshot** (name, `deviceId`, `dsk`
+  if known) when it's made.
+- If the node at that key disappears, or its `deviceId` no longer matches its
+  snapshot (excluded and re-included, or a node ID reused), the map shows
+  **Repair links…**, which opens the review screen for just those placements.
+
+### Size
+
+Map files can be tens of MB with a large image. The upload is sent as raw
+bytes (`Content-Type: application/x-toposite`) and read by TopoSite itself, so
+Z-Wave JS UI's 5 MB `express.json` limit doesn't apply. TopoSite allows up to
+40 MB.
+
+### API additions
+
+- `GET /api/maps/:id/export`: returns the file (`Content-Disposition:
+  attachment`).
+- `POST /api/import/preview`: takes the file and returns the manifest with a
+  proposed match and confidence per entry, plus a `token`. The parsed file is
+  held server-side for 10 minutes.
+- `POST /api/import/commit`: takes `{token, matches: {ref → deviceKey |
+  null}}` and creates the background and the map.
+- `GET /api/maps/:id/repair`: lists placements whose node is missing or
+  changed, with proposed matches. Fixes are applied with `PATCH` on the map's
+  placements.
+
+### Build order
+
+This becomes **step 6**, after the background library. The identity snapshot
+on placements goes into **step 1**, so data from now on carries it.
 
 ## Open
 
 - **Nav tab:** whether TopoSite should appear as a tab in Z-Wave JS UI's
   sidebar when upstream #3888 (plugin UI tabs) lands.
-- **Export / import:** of a map with its background, as one file for
-  backup and sharing.
+- **DSK:** not exposed by Z-Wave JS UI yet (upstream PR #4122). Matching relies
+  on `deviceId` + name + location until it is.
 
 <!-- SN: 00001 -->
