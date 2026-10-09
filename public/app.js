@@ -6,7 +6,8 @@
 // place; positions are saved server-side in plan pixels. Unplaced nodes use a
 // temporary auto-layout and are drawn faded.
 //
-// Drawing (Leaflet-Geoman, opt-in mode so it never touches nodes or links):
+// Drawing (Leaflet-Geoman; every non-drawing layer is pmIgnore: true so its
+// edit/drag/delete tools never touch nodes, links or backgrounds):
 // rectangles, circles, lines and text labels on any plan — a blank "drawing"
 // plan or over an image. The whole drawing is saved after each change.
 //
@@ -42,18 +43,19 @@ const map = L.map('map', { crs: L.CRS.Simple, minZoom: -5, maxZoom: 3, zoomSnap:
 map.createPane('ts-background').style.zIndex = 300
 map.createPane('ts-drawing').style.zIndex = 350
 
-// Geoman manages only layers created with pmIgnore: false (our drawn shapes)
-L.PM.setOptIn(true)
+// Geoman manages every layer without pmIgnore: true. Not opt-in mode: in opt-in
+// mode its text tool creates a read-only label (no pm hooks at creation).
+const IGNORE = { pmIgnore: true, snapIgnore: true }
 const drawColor = () => getComputedStyle(document.documentElement).getPropertyValue('--draw').trim() || '#3a3a3a'
 const shapeStyle = () => ({ color: drawColor(), weight: 3, fillOpacity: 0.04, pane: 'ts-drawing', pmIgnore: false })
 
 const layers = {
-    background: L.layerGroup().addTo(map),
+    background: L.layerGroup([], IGNORE).addTo(map),
     drawing: L.featureGroup().addTo(map),
-    routes: L.layerGroup().addTo(map),
-    nlwr: L.layerGroup(),
-    neighbors: L.layerGroup().addTo(map),
-    nodes: L.layerGroup().addTo(map),
+    routes: L.layerGroup([], IGNORE).addTo(map),
+    nlwr: L.layerGroup([], IGNORE),
+    neighbors: L.layerGroup([], IGNORE).addTo(map),
+    nodes: L.layerGroup([], IGNORE).addTo(map),
 }
 L.control.layers(null, {
     'Routes (last working)': layers.routes,
@@ -71,8 +73,6 @@ map.pm.setGlobalOptions({
     continueDrawing: false,
 })
 map.on('pm:create', (e) => {
-    e.layer.options.pmIgnore = false
-    L.PM.reInitLayer(e.layer)
     watchShape(e.layer)
     scheduleSave()
 })
@@ -167,9 +167,9 @@ async function draw() {
             panel.setStatus(explain(error, `Can't load image for ${esc(plan.name)}`))
             return null
         })
-        if (url) L.imageOverlay(url, bounds, { pane: 'ts-background' }).addTo(layers.background)
+        if (url) L.imageOverlay(url, bounds, { ...IGNORE, pane: 'ts-background' }).addTo(layers.background)
     } else {
-        L.imageOverlay(gridImage(width, height), bounds, { opacity: 0.6, pane: 'ts-background' }).addTo(layers.background)
+        L.imageOverlay(gridImage(width, height), bounds, { ...IGNORE, opacity: 0.6, pane: 'ts-background' }).addTo(layers.background)
     }
     if (state.shownPlanId !== (plan?.id ?? null)) {
         state.shownPlanId = plan?.id ?? null
@@ -212,16 +212,17 @@ function drawLinks(pos) {
         if (!a || !b) continue
         const tip = `${name(l.a)} ↔ ${name(l.b)}`
         if (l.kind === 'neighbor') {
-            L.polyline([a, b], { color: '#888888', weight: 1, opacity: 0.45, interactive: false })
+            L.polyline([a, b], { ...IGNORE, color: '#888888', weight: 1, opacity: 0.45, interactive: false })
                 .addTo(layers.neighbors)
         } else if (l.kind === 'failed') {
-            L.polyline([a, b], { color: '#8b0000', weight: 1.5, dashArray: '2 4' })
+            L.polyline([a, b], { ...IGNORE, color: '#8b0000', weight: 1.5, dashArray: '2 4' })
                 .bindTooltip(`${tip}<br>Failed ❌`, { sticky: true })
                 .addTo(layers.routes)
         } else {
             const lwr = l.kind === 'lwr'
             const detail = [rssiLabel(l.rssi), rateLabel(l.rate)].filter(Boolean).join(' · ')
             L.polyline([a, b], {
+                ...IGNORE,
                 color: rateColor(l.rate),
                 weight: lwr ? 4 : 1.5,
                 dashArray: lwr ? null : '5 5',
@@ -240,6 +241,7 @@ function drawNodes(pos, plan, placed, height) {
         if (!p) continue
         const isPlaced = !!(n.key && placed.has(n.key))
         const marker = L.marker(p, {
+            ...IGNORE,
             icon: nodeIcon(n, isPlaced || !plan),
             keyboard: false,
             draggable: !!(plan && n.key),
@@ -350,9 +352,10 @@ function drawShapes(plan) {
         if (sh.type === 'rect') layer = L.rectangle([[H - sh.y - sh.h, sh.x], [H - sh.y, sh.x + sh.w]], shapeStyle())
         else if (sh.type === 'circle') layer = L.circle([H - sh.y, sh.x], { ...shapeStyle(), radius: sh.r })
         else if (sh.type === 'line') layer = L.polyline(sh.points.map(([x, y]) => [H - y, x]), { ...shapeStyle(), fill: false })
-        else if (sh.type === 'label') layer = L.marker([H - sh.y, sh.x], { textMarker: true, text: sh.text, className: 'ts-label', pmIgnore: false })
+        else if (sh.type === 'label') layer = L.marker([H - sh.y, sh.x], { textMarker: true, text: sh.text })
         if (!layer) continue
         layer.addTo(layers.drawing)
+        layer.pm?.textArea?.classList.add('ts-label')
         watchShape(layer)
     }
 }

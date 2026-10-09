@@ -200,6 +200,10 @@ SNs, bump version, commit, and push.
 - **Leaflet** — simple (pixel) mode for floor plans; Web Mercator once a plan is
   georeferenced for the satellite level. Serve Leaflet from the plugin (no
   CDN) — many Z-Wave JS UI installs are LAN-only.
+- **Leaflet-Geoman for drawing — NOT in opt-in mode.** In opt-in mode its
+  text tool creates a read-only label (no `pm` at creation; found live
+  2026-10-09). Instead every non-drawing layer (nodes, links, backgrounds and
+  their layer groups) is created with `pmIgnore: true, snapIgnore: true`.
 - **Layout storage:** plans, rooms, panoramas and placements as JSON in Z-Wave
   JS UI's store dir — `<store>/toposite/layout.json`, images in
   `<store>/toposite/images/` — outside the plugin dir so redeploys never touch
