@@ -6,6 +6,10 @@
 // place; positions are saved server-side in plan pixels. Unplaced nodes use a
 // temporary auto-layout and are drawn faded.
 //
+// Drawing (Leaflet-Geoman, opt-in mode so it never touches nodes or links):
+// rectangles, circles, lines and text labels on any plan — a blank "drawing"
+// plan or over an image. The whole drawing is saved after each change.
+//
 // Every /toposite/api call sends Z-Wave JS UI's login token (if any); TopoSite
 // accepts exactly the logins Z-Wave JS UI accepts (lib/auth.js).
 //
@@ -24,6 +28,8 @@ const GRID_SIZE = 1000
 const POLL_MS = 30_000
 const REFRESH_COOLDOWN_MS = 60_000
 const PLAN_KEY = 'toposite.plan'
+const BLANK_SIZE = { widthPx: 3000, heightPx: 2000 }
+const SAVE_DELAY_MS = 800
 // Z-Wave JS UI's root, as the browser sees it (keeps working behind a path prefix)
 const ZUI_BASE = location.pathname.replace(/toposite\/.*$/, '')
 const LOGIN_LINK = `<a href="${ZUI_BASE}" target="_blank">log in to Z-Wave JS UI</a>`
@@ -31,11 +37,19 @@ const LOGIN_LINK = `<a href="${ZUI_BASE}" target="_blank">log in to Z-Wave JS UI
 const map = L.map('map', { crs: L.CRS.Simple, minZoom: -5, maxZoom: 3, zoomSnap: 0.25, attributionControl: false })
 
 // Background images get their own pane under the overlay pane (z 400), so they
-// always sit beneath route lines no matter when they're added.
+// always sit beneath route lines no matter when they're added; drawn shapes sit
+// between the two.
 map.createPane('ts-background').style.zIndex = 300
+map.createPane('ts-drawing').style.zIndex = 350
+
+// Geoman manages only layers created with pmIgnore: false (our drawn shapes)
+L.PM.setOptIn(true)
+const drawColor = () => getComputedStyle(document.documentElement).getPropertyValue('--draw').trim() || '#3a3a3a'
+const shapeStyle = () => ({ color: drawColor(), weight: 3, fillOpacity: 0.04, pane: 'ts-drawing', pmIgnore: false })
 
 const layers = {
     background: L.layerGroup().addTo(map),
+    drawing: L.featureGroup().addTo(map),
     routes: L.layerGroup().addTo(map),
     nlwr: L.layerGroup(),
     neighbors: L.layerGroup().addTo(map),
@@ -46,7 +60,23 @@ L.control.layers(null, {
     'Backup routes (next-to-last)': layers.nlwr,
     'Neighbors (when known)': layers.neighbors,
     'Nodes': layers.nodes,
+    'Drawing': layers.drawing,
 }, { collapsed: false, position: 'topright' }).addTo(map)
+
+map.pm.setGlobalOptions({
+    layerGroup: layers.drawing,
+    pathOptions: shapeStyle(),
+    textOptions: { className: 'ts-label', focusAfterDraw: true, removeIfEmpty: true },
+    snappable: true,
+    continueDrawing: false,
+})
+map.on('pm:create', (e) => {
+    e.layer.options.pmIgnore = false
+    L.PM.reInitLayer(e.layer)
+    watchShape(e.layer)
+    scheduleSave()
+})
+map.on('pm:remove', () => scheduleSave())
 
 const state = {
     nodes: [],
@@ -55,6 +85,10 @@ const state = {
     shownPlanId: undefined, // plan the view was last fitted to
     imageUrls: new Map(), // planId → object URL of the fetched image
     labelZoom: 0,
+    drawing: false, // draw mode on?
+    drawnPlanId: undefined, // plan whose shapes are in layers.drawing
+    drawnJSON: '', // those shapes as last loaded
+    saveTimer: null,
 }
 
 const panel = addPanel()
@@ -128,14 +162,14 @@ async function draw() {
 
     // Background: plan image, or the placeholder grid
     layers.background.clearLayers()
-    if (plan) {
+    if (plan?.image) {
         const url = await planImageUrl(plan).catch((error) => {
             panel.setStatus(explain(error, `Can't load image for ${esc(plan.name)}`))
             return null
         })
         if (url) L.imageOverlay(url, bounds, { pane: 'ts-background' }).addTo(layers.background)
     } else {
-        L.imageOverlay(gridImage(), bounds, { opacity: 0.6, pane: 'ts-background' }).addTo(layers.background)
+        L.imageOverlay(gridImage(width, height), bounds, { opacity: 0.6, pane: 'ts-background' }).addTo(layers.background)
     }
     if (state.shownPlanId !== (plan?.id ?? null)) {
         state.shownPlanId = plan?.id ?? null
@@ -162,6 +196,7 @@ async function draw() {
         }
     }
 
+    drawShapes(plan)
     drawLinks(pos)
     drawNodes(pos, plan, placed, height)
 }
@@ -296,6 +331,120 @@ async function planImageUrl(plan) {
     return url
 }
 
+// ---------------------------------------------------------------- drawing
+
+/** Rebuild drawn shapes from the layout, unless the user is mid-edit on this plan. */
+function drawShapes(plan) {
+    const shapes = plan ? state.layout.shapes.filter((sh) => sh.planId === plan.id) : []
+    const json = JSON.stringify(shapes)
+    const samePlan = state.drawnPlanId === (plan?.id ?? null)
+    if (samePlan && (state.drawing || state.saveTimer || json === state.drawnJSON)) return
+    if (!samePlan && state.drawing) setDrawing(false)
+    layers.drawing.clearLayers()
+    state.drawnPlanId = plan?.id ?? null
+    state.drawnJSON = json
+    if (!plan) return
+    const H = plan.heightPx
+    for (const sh of shapes) {
+        let layer
+        if (sh.type === 'rect') layer = L.rectangle([[H - sh.y - sh.h, sh.x], [H - sh.y, sh.x + sh.w]], shapeStyle())
+        else if (sh.type === 'circle') layer = L.circle([H - sh.y, sh.x], { ...shapeStyle(), radius: sh.r })
+        else if (sh.type === 'line') layer = L.polyline(sh.points.map(([x, y]) => [H - y, x]), { ...shapeStyle(), fill: false })
+        else if (sh.type === 'label') layer = L.marker([H - sh.y, sh.x], { textMarker: true, text: sh.text, className: 'ts-label', pmIgnore: false })
+        if (!layer) continue
+        layer.addTo(layers.drawing)
+        watchShape(layer)
+    }
+}
+
+function watchShape(layer) {
+    for (const ev of ['pm:edit', 'pm:dragend', 'pm:textchange', 'pm:textblur']) layer.on(ev, scheduleSave)
+}
+
+/** Current drawing → shapes in plan pixels (x right, y down). */
+function collectShapes(plan) {
+    const H = plan.heightPx
+    const shapes = []
+    layers.drawing.eachLayer((layer) => {
+        if (layer instanceof L.Rectangle) {
+            const b = layer.getBounds()
+            shapes.push({ type: 'rect', x: b.getWest(), y: H - b.getNorth(), w: b.getEast() - b.getWest(), h: b.getNorth() - b.getSouth() })
+        } else if (layer instanceof L.Circle) {
+            const c = layer.getLatLng()
+            shapes.push({ type: 'circle', x: c.lng, y: H - c.lat, r: layer.getRadius() })
+        } else if (layer instanceof L.Polyline && !(layer instanceof L.Polygon)) {
+            const pts = layer.getLatLngs().flat(Infinity)
+            if (pts.length >= 2) shapes.push({ type: 'line', points: pts.map((p) => [p.lng, H - p.lat]) })
+        } else if (layer instanceof L.Marker && layer.options.textMarker) {
+            const text = layer.pm?.getText?.() ?? layer.options.text ?? ''
+            const c = layer.getLatLng()
+            if (text.trim()) shapes.push({ type: 'label', x: c.lng, y: H - c.lat, text })
+        }
+    })
+    return shapes
+}
+
+function scheduleSave() {
+    clearTimeout(state.saveTimer)
+    state.saveTimer = setTimeout(saveShapes, SAVE_DELAY_MS)
+}
+
+async function saveShapes() {
+    const plan = state.layout.plans.find((p) => p.id === state.drawnPlanId)
+    if (!plan) { state.saveTimer = null; return }
+    try {
+        const saved = await api(`plans/${plan.id}/shapes`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shapes: collectShapes(plan) }),
+        })
+        state.drawnJSON = JSON.stringify(saved)
+        panel.setStatus(`Drawing saved (${saved.length} shape${saved.length === 1 ? '' : 's'}).`)
+    } catch (error) {
+        panel.setStatus(explain(error, "Couldn't save the drawing"))
+    }
+    state.saveTimer = null
+    reload()
+}
+
+function setDrawing(on) {
+    state.drawing = on
+    map.getContainer().classList.toggle('ts-drawing-on', on)
+    if (on) {
+        map.pm.setPathOptions(shapeStyle())
+        map.pm.addControls({
+            position: 'topleft',
+            drawMarker: false, drawCircleMarker: false, drawPolygon: false, cutPolygon: false, rotateMode: false,
+            drawRectangle: true, drawCircle: true, drawPolyline: true, drawText: true,
+            editMode: true, dragMode: true, removalMode: true,
+        })
+        panel.setStatus('Drawing: pick a tool on the left. Lines finish with a click on the last point. Changes save automatically.')
+    } else {
+        map.pm.disableDraw()
+        map.pm.disableGlobalEditMode()
+        map.pm.disableGlobalDragMode()
+        map.pm.disableGlobalRemovalMode()
+        map.pm.removeControls()
+        if (state.saveTimer) { clearTimeout(state.saveTimer); saveShapes() }
+    }
+    panel.setDrawing(on)
+}
+
+async function newDrawing() {
+    try {
+        const n = state.layout.plans.filter((p) => !p.image).length + 1
+        const plan = await api('plans/blank', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: n === 1 ? 'Floor plan' : `Floor plan ${n}`, ...BLANK_SIZE }),
+        })
+        selectPlan(plan.id)
+        panel.setStatus(`Added ${esc(plan.name)}. Click Draw to start.`)
+    } catch (error) {
+        panel.setStatus(explain(error, "Couldn't create a drawing"))
+    }
+}
+
 // ---------------------------------------------------------------- plans
 
 async function uploadPlan(file) {
@@ -417,18 +566,21 @@ function addPanel() {
                 <div class="ts-row">
                     <select id="ts-plan" title="Background image"></select>
                     <button type="button" id="ts-add" title="Upload a PNG, JPEG or WebP image as a new background">Add image…</button>
+                    <button type="button" id="ts-new" title="Start a blank floor plan to draw on">New drawing</button>
                     <button type="button" id="ts-del" title="Delete this background and every node position on it">Delete</button>
                     <input type="file" id="ts-file" accept="image/png,image/jpeg,image/webp" hidden>
                 </div>
-                <div class="ts-row"><button type="button" id="ts-refresh"
+                <div class="ts-row"><button type="button" id="ts-draw" title="Draw rectangles, circles, lines and labels on this plan">Draw</button><button type="button" id="ts-refresh"
                     title="Asks Z-Wave JS UI to re-read every node's neighbor list from the controller. The radio pauses for a few seconds; allowed once a minute.">Refresh neighbors</button></div>
                 <div class="muted" id="ts-status"></div>`
             L.DomEvent.disableClickPropagation(div)
             L.DomEvent.disableScrollPropagation(div)
-            els = Object.fromEntries(['summary', 'plan', 'add', 'del', 'file', 'refresh', 'status']
+            els = Object.fromEntries(['summary', 'plan', 'add', 'new', 'del', 'draw', 'file', 'refresh', 'status']
                 .map((k) => [k, div.querySelector(`#ts-${k}`)]))
             els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
             els.add.addEventListener('click', () => els.file.click())
+            els.new.addEventListener('click', () => newDrawing())
+            els.draw.addEventListener('click', () => setDrawing(!state.drawing))
             els.file.addEventListener('change', () => {
                 const file = els.file.files[0]
                 els.file.value = ''
@@ -455,6 +607,10 @@ function addPanel() {
     new Panel({ position: 'topleft' }).addTo(map)
     return {
         setStatus(html) { els.status.innerHTML = html },
+        setDrawing(on) {
+            els.draw.textContent = on ? 'Done drawing' : 'Draw'
+            els.draw.classList.toggle('on', on)
+        },
         setSummary(nodes) {
             const dead = nodes.filter((n) => n.status !== 'ok').length
             const withNb = nodes.filter((n) => n.neighbors.length).length
@@ -463,6 +619,7 @@ function addPanel() {
         setPlans(plans, selectedId) {
             els.plan.hidden = plans.length === 0
             els.del.hidden = plans.length === 0
+            els.draw.hidden = plans.length === 0
             els.plan.innerHTML = plans.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')
             if (selectedId) els.plan.value = selectedId
         },
@@ -514,14 +671,13 @@ function hexPoints(cx, cy, r) {
     return pts.join(' ')
 }
 
-/** Placeholder background when no plan image exists: a light grid. */
-function gridImage() {
-    const step = GRID_SIZE / 20
+/** Placeholder background for the default view and blank drawing plans: a light 100-px grid. */
+function gridImage(width = GRID_SIZE, height = GRID_SIZE) {
+    const step = 100
     let lines = ''
-    for (let i = 0; i <= GRID_SIZE; i += step) {
-        lines += `<line x1="${i}" y1="0" x2="${i}" y2="${GRID_SIZE}"/><line x1="0" y1="${i}" x2="${GRID_SIZE}" y2="${i}"/>`
-    }
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${GRID_SIZE}" height="${GRID_SIZE}"><g stroke="#999" stroke-width="1" opacity="0.35">${lines}</g></svg>`
+    for (let x = 0; x <= width; x += step) lines += `<line x1="${x}" y1="0" x2="${x}" y2="${height}"/>`
+    for (let y = 0; y <= height; y += step) lines += `<line x1="0" y1="${y}" x2="${width}" y2="${y}"/>`
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><g stroke="#999" stroke-width="2" opacity="0.35">${lines}</g></svg>`
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
 

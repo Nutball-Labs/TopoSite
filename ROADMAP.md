@@ -43,6 +43,7 @@ Stored as JSON in Z-Wave JS UI's store dir: `<store>/toposite/layout.json`, imag
 - Labels and RSSI shown only past a zoom threshold or on hover, to avoid clutter.
 - **Prerequisite (done 2026-10-09):** auth check before any write route — TopoSite accepts exactly the logins Z-Wave JS UI accepts.
 - *Done:* background image upload (PNG/JPEG/WebP) and drag-to-place, saved server-side.
+- *Done:* simple floor-plan drawing (rectangles, circles, lines, labels) on a blank plan or over an image — added because satellite screenshots don't zoom in far enough (user, 2026-10-09). Shapes are stored per plan; room polygons (data model above) are still to come.
 
 ## Phase 2 — Room Panoramas
 

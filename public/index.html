@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TopoSite</title>
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="vendor/geoman/leaflet-geoman.css">
 <style>
     :root {
         --bg: #f4f4f2;
@@ -12,6 +13,7 @@
         --text: #222222;
         --muted: #666666;
         --border: #cccccc;
+        --draw: #3a3a3a;
     }
     @media (prefers-color-scheme: dark) {
         :root {
@@ -20,6 +22,7 @@
             --text: #e6e6e6;
             --muted: #9a9a9a;
             --border: #44464b;
+            --draw: #c8c8c8;
         }
     }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -36,6 +39,10 @@
     .ts-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
     .ts-row select { font: inherit; max-width: 140px; }
     .ts-unplaced { opacity: 0.45; }
+    .ts-panel button.on { outline: 2px solid #2DCC70; }
+    textarea.pm-textarea.ts-label { background: transparent; color: var(--draw); border: 1px dashed transparent;
+        font: 600 14px/1.2 system-ui, sans-serif; resize: none; overflow: hidden; }
+    textarea.pm-textarea.ts-label:focus, .ts-drawing-on textarea.pm-textarea.ts-label { border-color: var(--border); }
     #ts-status a { color: inherit; }
 
     .ts-legend { font-size: 12px; }
@@ -58,6 +65,7 @@
 <body>
 <div id="map"></div>
 <script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/geoman/leaflet-geoman.min.js"></script>
 <script src="vendor/socket.io/socket.io.min.js"></script>
 <script type="module" src="app.js"></script>
 </body>

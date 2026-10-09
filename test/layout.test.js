@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { Layout, sniffImage } from '../lib/layout.js'
+import { Layout, sniffImage, cleanShape } from '../lib/layout.js'
 import { resolveStoreDir } from '../lib/store.js'
 import { mkdir, writeFile } from 'node:fs/promises'
 
@@ -27,7 +27,7 @@ test('only PNG, JPEG and WebP are recognized — never SVG', () => {
 
 test('empty store loads an empty layout', async () => {
     const layout = await fresh()
-    assert.deepEqual(await layout.load(), { version: 1, plans: [], placements: [] })
+    assert.deepEqual(await layout.load(), { version: 1, plans: [], placements: [], shapes: [] })
 })
 
 test('adding a plan writes the image and layout.json', async () => {
@@ -66,7 +66,7 @@ test('placements: one per device, clamped to the plan, removed with their plan',
     await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:4', planId: plan.id, x: 1, y: 1 })
     await layout.deletePlan(plan.id)
     saved = await layout.load()
-    assert.deepEqual(saved, { version: 1, plans: [], placements: [] })
+    assert.deepEqual(saved, { version: 1, plans: [], placements: [], shapes: [] })
     assert.ok(!existsSync(layout.imagePath(plan)))
 })
 
@@ -76,6 +76,48 @@ test('concurrent placements are all kept', async () => {
     await Promise.all([2, 3, 4, 5, 6].map((id) =>
         layout.setPlacement({ deviceKey: `zwave:cdfbb3c7:${id}`, planId: plan.id, x: id, y: id })))
     assert.equal((await layout.load()).placements.length, 5)
+})
+
+test('shapes: rect, circle, line and label are validated and trimmed to known fields', () => {
+    assert.deepEqual(cleanShape({ id: 'a1', type: 'rect', x: 1.234, y: 2, w: -30, h: 40, evil: '<script>' }, 0, 'p'),
+        { id: 'a1', planId: 'p', type: 'rect', x: 1.2, y: 2, w: 30, h: 40 })
+    assert.deepEqual(cleanShape({ id: 'c', type: 'circle', x: 5, y: 5, r: 10 }, 0, 'p'),
+        { id: 'c', planId: 'p', type: 'circle', x: 5, y: 5, r: 10 })
+    assert.deepEqual(cleanShape({ id: 'l', type: 'line', points: [[0, 0], [10, 0], [10, 10]] }, 0, 'p').points, [[0, 0], [10, 0], [10, 10]])
+    assert.equal(cleanShape({ id: 't', type: 'label', x: 1, y: 1, text: 'K'.repeat(500) }, 0, 'p').text.length, 200)
+    assert.match(cleanShape({ id: '../x', type: 'circle', x: 1, y: 1, r: 1 }, 0, 'p').id, /^[0-9a-f]{8}$/, 'odd ids replaced')
+    for (const bad of [
+        null,
+        { type: 'polygon' },
+        { type: 'rect', x: '1', y: 1, w: 1, h: 1 },
+        { type: 'circle', x: 1, y: 1, r: Infinity },
+        { type: 'line', points: [[0, 0]] },
+        { type: 'line', points: [[0, 0], [1]] },
+        { type: 'label', x: 1, y: 1, text: 42 },
+    ]) {
+        assert.throws(() => cleanShape(bad, 3, 'p'), { status: 400 }, JSON.stringify(bad))
+    }
+})
+
+test('blank plans hold shapes; saving replaces only that plan\'s shapes; deleting removes them', async () => {
+    const layout = await fresh()
+    const a = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 2000 })
+    const b = await layout.addBlankPlan({ name: 'Shop', widthPx: 1000, heightPx: 1000 })
+    assert.equal(a.image, null)
+    await layout.setShapes(a.id, [{ type: 'rect', x: 0, y: 0, w: 10, h: 10 }, { type: 'label', x: 5, y: 5, text: 'Kitchen' }])
+    await layout.setShapes(b.id, [{ type: 'circle', x: 1, y: 1, r: 1 }])
+    await layout.setShapes(a.id, [{ type: 'line', points: [[0, 0], [5, 5]] }])
+    let saved = await layout.load()
+    assert.deepEqual(saved.shapes.map((sh) => [sh.planId, sh.type]).sort(), [[a.id, 'line'], [b.id, 'circle']].sort())
+
+    await assert.rejects(layout.setShapes(a.id, [{ type: 'bogus' }]), { status: 400 })
+    assert.equal((await layout.load()).shapes.length, 2, 'a rejected save changes nothing')
+    await assert.rejects(layout.setShapes('nope', []), { status: 404 })
+    await assert.rejects(layout.addBlankPlan({ name: 'x', widthPx: 0, heightPx: 1 }), { status: 400 })
+
+    await layout.deletePlan(a.id)
+    saved = await layout.load()
+    assert.deepEqual(saved.shapes.map((sh) => sh.planId), [b.id])
 })
 
 test("store dir: env overrides, then <cwd>/store, then two levels above the plugin", async () => {

@@ -52,12 +52,21 @@ export default class TopoSite {
             })
         })
 
+        // Body (JSON): {name, widthPx, heightPx} → a blank plan to draw on
+        api('post', '/plans/blank', (req) => {
+            const { name, widthPx, heightPx } = req.body ?? {}
+            return this._layout().addBlankPlan({ name, widthPx, heightPx })
+        })
+
         api('delete', '/plans/:id', (req) => this._layout().deletePlan(req.params.id))
+
+        // Body (JSON): {shapes: [...]} — replaces every drawn shape on the plan
+        api('put', '/plans/:id/shapes', (req) => this._layout().setShapes(req.params.id, req.body?.shapes))
 
         api('get', '/plans/:id/image', async (req, res) => {
             const layout = await this._layout().load()
             const plan = layout.plans.find((p) => p.id === req.params.id)
-            if (!plan) throw httpError(404, 'No such plan')
+            if (!plan || !plan.image) throw httpError(404, 'No such plan image')
             res.type(plan.image.split('.').pop())
             res.set('Cache-Control', 'private, max-age=3600')
             res.set('X-Content-Type-Options', 'nosniff')

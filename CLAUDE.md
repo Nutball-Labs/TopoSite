@@ -55,9 +55,9 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | `index.js` | Plugin entry: default-export class Z-Wave JS UI constructs with `{zwave, mqtt, app, logger}`; registers routes under `/toposite/` |
 | `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model; adds `key` = `zwave:<homeId>:<nodeId>` from `zwave.homeHex` |
 | `lib/auth.js` | **The only file that reads Z-Wave JS UI's auth files** (`settings.json` `gateway.authEnabled`, `.session-secret` / `SESSION_SECRET`, `users.json`, `TRUSTED_API_LISTEN`) — accepts exactly the logins Z-Wave JS UI accepts; HS256 JWT check with `node:crypto` |
-| `lib/layout.js` | Plans + placements (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
+| `lib/layout.js` | Plans (image or blank), placements and drawn shapes (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, strict shape validation, serialized atomic writes |
 | `lib/store.js` | Store dir resolution (`TOPOSITE_STORE_DIR` → `STORE_DIR` → `<cwd>/store` → two dirs above the plugin; must contain `settings.json`), atomic JSON writes |
-| `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4 — no SN, skipped by sn_audit) |
+| `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4, Leaflet-Geoman free 2.20.2 — no SN, skipped by sn_audit) |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
 | `ROADMAP.md` | Zoom levels (satellite → floor plan → room panorama), data model, phases |
 | `scripts/sn_audit.sh` | Regenerates `sn_audit.txt` |
@@ -71,9 +71,11 @@ the request; the static page files are open (no data in them).
 | Route | Returns |
 |---|---|
 | `GET /toposite/` | Map page (static files from `public/`; `/toposite` redirects to `/toposite/`) |
-| `GET /toposite/api/layout` | `{success, data: {version, plans[], placements[]}}` (ROADMAP data model) |
+| `GET /toposite/api/layout` | `{success, data: {version, plans[], placements[], shapes[]}}` (ROADMAP data model) |
 | `POST /toposite/api/plans?name&widthPx&heightPx` | Body = raw PNG/JPEG/WebP bytes (≤ 25 MB; size decoded by the browser) → new plan |
-| `DELETE /toposite/api/plans/:id` | Deletes the plan, its image and its placements |
+| `POST /toposite/api/plans/blank` | JSON `{name, widthPx, heightPx}` → blank plan (`image: null`) to draw on |
+| `PUT /toposite/api/plans/:id/shapes` | JSON `{shapes: [...]}` replaces the plan's drawing. Shapes (plan px): `rect {x,y,w,h}`, `circle {x,y,r}`, `line {points:[[x,y]…]}`, `label {x,y,text≤200}` |
+| `DELETE /toposite/api/plans/:id` | Deletes the plan, its image, placements and shapes |
 | `GET /toposite/api/plans/:id/image` | The plan image (the page fetches it with the token → object URL) |
 | `PUT /toposite/api/placements` | JSON `{deviceKey, planId, x, y}` (plan pixels, clamped) — one placement per device |
 | `DELETE /toposite/api/placements/:deviceKey` | Back to auto-layout |

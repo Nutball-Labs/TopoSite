@@ -68,6 +68,10 @@ Open `http://<zwave-js-ui-host>:8091/toposite/`.
 - **Add image…** uploads a background: a floor plan, site plan or a satellite
   screenshot (PNG, JPEG or WebP, up to 25 MB). Several images can be added and
   switched with the drop-down.
+- **New drawing** starts a blank floor plan; **Draw** shows tools for
+  rectangles, circles, lines and text labels, plus edit, move and delete.
+  You can also draw on top of an uploaded image (e.g. trace walls over a
+  satellite view). Drawings save automatically.
 - **Drag a node** onto the image to place it; positions are saved in Z-Wave JS
   UI's store (`store/toposite/`), so they're kept with its backups.
   Right-click a placed node to send it back to the automatic layout (faded).
@@ -106,7 +110,8 @@ feature decisions, and real-world testing are entirely human-driven.
   styles) follows the Network Graph in
   [Z-Wave JS UI](https://github.com/zwave-js/zwave-js-ui) by Daniel Lando and
   contributors (MIT).
-- Bundled: [Leaflet](https://leafletjs.com) 1.9.4 (BSD-2-Clause) and the
+- Bundled: [Leaflet](https://leafletjs.com) 1.9.4 (BSD-2-Clause),
+  [Leaflet-Geoman](https://geoman.io) free 2.20.2 (MIT) and the
   [Socket.IO](https://socket.io) 4.8.4 client (MIT); their licenses are in
   `public/vendor/`.
 
