@@ -31,7 +31,8 @@ room needs a repeater.
 
 ## Requirements
 
-- Z-Wave JS UI (which requires Node.js 24 or newer)
+- Z-Wave JS UI **11.6.0 or newer** (older releases load plugins a different way)
+- Node.js 20 or newer (the official Z-Wave JS UI Docker image already has it)
 
 ---
 
@@ -42,8 +43,15 @@ cd /path/to/zwave-js-ui/store/plugins     # Docker: the store volume
 git clone git@github.com:Nutball-Labs/TopoSite.git toposite
 ```
 
-Then in Z-Wave JS UI: **Settings → General → Plugins**, add the plugin's path
-as Z-Wave JS UI sees it (Docker: `/usr/src/app/store/plugins/toposite`) and save.
+Then in Z-Wave JS UI: **Settings → General → Plugins**, add the path to
+TopoSite's `index.js` as Z-Wave JS UI sees it (Docker:
+`/usr/src/app/store/plugins/toposite/index.js`), press **Enter** so it turns
+into a chip, and save. The path must end in `index.js` — a bare directory
+won't load.
+
+To check it loaded, turn on **Settings → General → Log enabled** and look for
+`Successfully loaded plugin index.js` in Z-Wave JS UI's console output
+(`docker logs zwave-js-ui`).
 
 TopoSite's pages are served by Z-Wave JS UI under `/toposite/`.
 

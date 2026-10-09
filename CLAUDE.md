@@ -19,7 +19,7 @@ Private GitHub repo at https://github.com/Nutball-Labs/TopoSite — all work on 
 "Topo" means **topology**, not topography.
 
 **Current version:** 0.1.0 (SN 00001) — `version` in `package.json`
-**Language:** JavaScript (ES modules), Node — runs inside Z-Wave JS UI (Node ≥ 24)
+**Language:** JavaScript (ES modules), Node — runs inside Z-Wave JS UI (Node ≥ 20 — the `zwavejs/zwave-js-ui` 11.24.2 Docker image ships 22.20). Requires **Z-Wave JS UI ≥ 11.6.0** (first release that loads plugins with `import()`)
 **Tests:** `npm test` (Node's built-in `node:test`, no dependencies)
 
 ---
@@ -64,25 +64,42 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 
 | Route | Returns |
 |---|---|
-| `GET /toposite/api/nodes` | `{success, data: [node]}` — node: `id, name, location, role (controller/listening/sleeping), isListening, isFrequentListening, isRouting, status (ok/dead/failed), neighbors[], lwr, nlwr` (routes: `hops, repeaters[], rssi, repeaterRSSI[], protocolDataRate, failedBetween`) |
+| `GET /toposite/api/nodes` | `{success, data: [node]}` — node: `id, name, location, role (controller/listening/sleeping), isListening, isFrequentListening, isRouting, status (ok/dead/failed), neighbors[], unknownNeighbors[], lwr, nlwr` (routes: `hops, repeaters[], rssi, repeaterRSSI[], protocolDataRate, failedBetween`). Virtual nodes (broadcast 255, multicast) are skipped. RSSI is dBm, `'saturated'`, `'no-signal'` or `null` (zwave-js RssiError 126/125/127). `unknownNeighbors` = IDs in the controller's neighbor table with no node (removed nodes) |
 
 ---
 
 ## Z-Wave JS UI Plugin Facts
 
-Checked in Z-Wave JS UI source 2026-10-06 (v11.24.2, `docs/guide/plugins.md`,
+Checked in Z-Wave JS UI source 2026-10-06/09 and live on 11.24.2 2026-10-09 (`docs/guide/plugins.md`,
 `api/lib/CustomPlugin.ts`, `api/app.ts`, `api/lib/ZwaveClient.ts`):
 
-- Loaded with `import()`; must default-export a class; constructor gets
+- Loaded with `import()` since **v11.6.0** (v11.5.x and older used `require()`
+  and are not supported); must default-export a class; constructor gets
   `PluginContext {zwave, mqtt, app, logger}`; must implement `async destroy()`
   (called on shutdown **and on settings save** — remove listeners/timers there).
-- Installed via **Settings → General → Plugins**: absolute path to the plugin
-  dir or an npm package name. In Docker, put it under `store/` so it persists
-  (`/usr/src/app/store/plugins/toposite`).
+- Installed via **Settings → General → Plugins**: absolute path or an npm
+  package name. The path must point at **`index.js`**, not the directory:
+  ESM `import()` rejects directories (`ERR_UNSUPPORTED_DIR_IMPORT`), even
+  though Z-Wave JS UI's docs show a directory. In Docker, put it under `store/`
+  so it persists: `/usr/src/app/store/plugins/toposite/index.js`. The field is
+  a chip combobox — press **Enter** before Save or nothing is saved. The logger
+  module name is `path.basename()` of the entry, so log lines say `INDEX.JS`.
+- Z-Wave JS UI's own log (APP lines, "Successfully loaded plugin") goes to
+  `docker logs` only, and only when **Settings → General → Log enabled** is on
+  (`gateway.logEnabled`). `store/logs/zwavejs_*.log` is the driver log.
 - `app` is an Express router mounted at the **root** of Z-Wave JS UI's server →
   all TopoSite routes live under `/toposite/`.
 - **Plugin routes run BEFORE Z-Wave JS UI's auth check** — anything TopoSite
-  serves is reachable without logging in. See Known Issues.
+  serves is reachable without logging in. The plugin router is also mounted
+  before the session middleware, so a plugin can't reuse Z-Wave JS UI's login.
+  See Known Issues.
+- **Neighbors are a cache, not live data.** `node.neighbors` is empty after a
+  restart and is filled only when a node is clicked in the Network Graph
+  (NodePanel → `getNodeNeighbors`) or `refreshNeighbors()` runs (whole mesh,
+  turns RF off briefly, max once per 60 s). The 11.24 Network Graph draws
+  LWR/NLWR only and has no refresh button. LWR/NLWR are always populated.
+- `refreshNeighbors`, `getNodeNeighbors` and `discoverNodeNeighbors` are in
+  Z-Wave JS UI's socket.io `allowedApis`, which sits behind its own auth.
 - Node data: `zwave.getNodes()` → `ZUINode[]` with `neighbors`, `isListening`,
   `isFrequentListening`, `isRouting`, `isControllerNode`, `failed`, `available`,
   `loc`, `name`, `statistics.lwr` / `statistics.nlwr` (zwave-js RouteStatistics).
@@ -187,6 +204,7 @@ Taken from Z-Wave JS UI's mesh graph, `src/components/custom/ZwaveGraph.vue`
 | `#2DCC70` green | 2 hops |
 | `#F1C40F` yellow | 3 hops |
 | `#E77E23` orange | 4 hops |
+| `#4a148c` dark purple | 5+ hops *(TopoSite addition — Z-Wave JS UI's table stops at 4; user, 2026-10-09)* |
 | `#8b0000` dark red | Failed or dead node (label prefixed `FAILED:` / `DEAD:`) |
 | `#666666` gray | Unknown (no route stats) |
 
@@ -232,8 +250,10 @@ must not clash with the meanings above.
 - **No auth on plugin routes.** Z-Wave JS UI's login doesn't cover them. Keep
   routes read-only; before any write route (saving positions, uploading floor
   plans) add an auth check or an explicit "trusted network only" setting.
+- **Forced neighbor refresh** (requested 2026-10-09) — design pending: must not
+  become an unauthenticated route that turns the radio off.
 - Layout storage path inside Z-Wave JS UI's store dir not yet resolved.
-- Not yet tested inside a live Z-Wave JS UI instance.
+- Live-tested on Z-Wave JS UI 11.24.2 (wopr3, 2026-10-09): loads, `/toposite/api/nodes` returns the mesh.
 
 ---
 

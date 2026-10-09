@@ -2,7 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { toNode, toRoute } from '../lib/mesh.js'
+import { toNode, toRoute, toRSSI, getNodes } from '../lib/mesh.js'
 import TopoSite, { BASE } from '../index.js'
 
 test('controller, mains and battery nodes get the Z-Wave JS UI roles', () => {
@@ -30,6 +30,48 @@ test('missing name falls back to Z-Wave JS UI style label', () => {
     assert.equal(n.name, 'NodeID 12')
     assert.deepEqual(n.neighbors, [1, 4])
     assert.equal(n.lwr, null)
+})
+
+// Values below are from a live Z-Wave JS UI 11.24.2 mesh (2026-10-09).
+
+test('RSSI error codes are not reported as dBm', () => {
+    assert.equal(toRSSI(-94), -94)
+    assert.equal(toRSSI(127), null)
+    assert.equal(toRSSI(126), 'saturated')
+    assert.equal(toRSSI(125), 'no-signal')
+    assert.equal(toRSSI(undefined), null)
+    const r = toRoute({ repeaters: [2, 3, 60, 78], rssi: -75, repeaterRSSI: [127, 127, -74, -71], protocolDataRate: 3 })
+    assert.equal(r.hops, 5)
+    assert.deepEqual(r.repeaterRSSI, [null, null, -74, -71])
+    assert.equal(toRoute({ repeaters: [2], repeaterRSSI: [127] }).rssi, null)
+})
+
+test('route failure between two nodes is kept', () => {
+    const r = toRoute({ repeaters: [58, 45], rssi: -94, repeaterRSSI: [-95, -85], protocolDataRate: 1, routeFailedBetween: [58, 78] })
+    assert.deepEqual(r.failedBetween, [58, 78])
+})
+
+test('NUL-padded names and locations count as empty', () => {
+    const n = toNode({ id: 63, name: '\u0000', loc: '\u0000', available: true })
+    assert.equal(n.name, 'NodeID 63')
+    assert.equal(n.location, '')
+    assert.equal(toNode({ id: 3, name: ' Hall Bath Fan ', loc: 'Hallway', available: true }).name, 'Hall Bath Fan')
+})
+
+test('getNodes skips virtual nodes and separates stale neighbor IDs', () => {
+    const zwave = {
+        getNodes: () => [
+            { id: 255, name: 'Broadcast', virtual: true, kind: 'broadcast', available: true },
+            { id: 1, isControllerNode: true, isListening: true, available: true },
+            { id: 2, isListening: true, available: true, neighbors: [1, 6, 75] },
+            { id: 75, isListening: false, available: false, neighbors: [] },
+        ],
+    }
+    const nodes = getNodes(zwave)
+    assert.deepEqual(nodes.map((n) => n.id), [1, 2, 75])
+    const n2 = nodes.find((n) => n.id === 2)
+    assert.deepEqual(n2.neighbors, [1, 75], 'dead node 75 still exists, so it stays')
+    assert.deepEqual(n2.unknownNeighbors, [6], 'node 6 was removed but is still in the controller table')
 })
 
 test('plugin registers its API under the TopoSite base path and serves nodes', () => {
