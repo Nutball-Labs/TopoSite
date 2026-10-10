@@ -67,12 +67,25 @@ Open `http://<zwave-js-ui-host>:8091/toposite/`. The pane on the right (drag
 its left edge to resize) has:
 
 - **Map** (drop-down): the map you're looking at, with how many nodes are
-  placed on each. **Network Graph** is built in and lays nodes out
-  automatically; your own maps keep their own background and node positions.
-- **Map ▾**: **New…**, **Rename…**, **Delete** (click twice), **Export**
-  (downloads the map as a `.toposite` file) and **Import…** (loads one as a new
-  map — you review how each device matches this network first; unmatched ones
-  become dashed placeholders you can right-click to link later).
+  placed on each. ★ marks the default map, which opens when TopoSite loads.
+  **Network Graph** is built in and lays nodes out automatically; your own maps
+  keep their own background, node positions and node list.
+- **Edit map**: the map is read-only until this is on. While editing:
+  - **Nodes on this map**: tick the nodes to show. *Include all* shows every
+    node except the unticked ones (and nodes added to Z-Wave later appear);
+    *Exclude all* shows only the ticked ones. **Show only** buttons (All,
+    None, Mains, Battery, a location) set the list in one go; the filter box
+    narrows it by name or location.
+  - **Not placed yet**: shown nodes with no position on this map. Drag one onto
+    the map, or click it to drop it in the middle of the view.
+  - Drag nodes to move them; **right-click** a node for Unplace or Hide on this map.
+- **Map ▾**: **New…** (name; background — none, one you already have, or
+  upload; include all or exclude all; optionally copy node positions from a
+  map on the same background), **Rename…**, **Set as default**, **Delete**
+  (click twice), **Export** (downloads the map as a `.toposite` file) and
+  **Import…** (loads one as a new map — you review how each device matches
+  this network first; unmatched ones become dashed placeholders you can link
+  later in edit mode).
 - **Background ▾**: **Set image…** (any PNG, JPEG or WebP up to 25 MB — a floor
   plan export, a drawing, a satellite screenshot), **Set dark-mode image…**
   (shown while Z-Wave JS UI is in dark mode), **Unset**. Node positions stay
@@ -81,10 +94,9 @@ its left edge to resize) has:
   list (the radio pauses for a few seconds; once a minute at most).
 - **Legend**: shows or hides the legend.
 
-On the map: **drag a node** onto the background to place it (saved in Z-Wave JS
-UI's store, so it's kept with its backups); **right-click** a node for its
-menu (e.g. Unplace); **Layers…** (top right) toggles routes, backup routes,
-neighbors and nodes.
+On the map: **Layers…** (top right) toggles routes, backup routes, neighbors
+and nodes. Positions are saved in Z-Wave JS UI's store, so they're kept with
+its backups.
 
 If Z-Wave JS UI's login is turned on, TopoSite requires the same login: log in
 to Z-Wave JS UI in the same browser first.
@@ -95,8 +107,9 @@ to Z-Wave JS UI in the same browser first.
 
 **v0.1.0 — early development.** Map page at `/toposite/` with the built-in
 Network Graph and your own maps: backgrounds (light and dark), dragging nodes
-into place, export/import, neighbor refresh. Next: per-map node lists, a
-default map, and an edit mode (see `MAPS.md`).
+into place, export/import, neighbor refresh. Each map has its own node
+list, a default map opens on load, and changes happen in edit mode. Next: ghost
+repeaters for hidden nodes and the live Network Graph layout (see `MAPS.md`).
 
 ---
 

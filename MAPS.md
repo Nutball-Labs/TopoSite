@@ -201,23 +201,10 @@ stored; it comes from Z-Wave JS UI on every request, keyed by `deviceKey`.
 - **`deviceKey`** stays `zwave:<homeId>:<nodeId>`.
 - **Deleting a background** is refused (409) while any map uses it.
 
-### Migration from version 1 (today's plans)
+### Migration from version 1
 
-- Each plan becomes a **placed map** with the same id, name, size and scale.
-  Its placements move inside it with coordinates unchanged (`planId`
-  dropped). Placeholders keep their `id`.
-- A plan with an image also becomes a **background** holding its image files
-  and natural size. The map gets `background: { id, imageRect }`, using the
-  plan's `imageRect`. A plan without an image becomes a map with `background:
-  null`.
-- Every migrated map gets the rule *include all* with no exceptions, and an
-  empty view.
-- The built-in Network Graph map (`layout: "graph"`) is added.
-- `defaultMapId` is the map migrated from the plan named **House** if there is
-  one, otherwise the Network Graph.
-- Legacy `shapes` from the removed drawing tools are dropped.
-- The migration runs once, on first load of a v1 file. A copy of the old file
-  is kept as `layout.v1.json`.
+Done once on wopr3 (2026-10-10) and then removed from the code: TopoSite now
+reads version 2 only and refuses any other `layout.json` without touching it.
 
 ## API (sketch)
 
@@ -243,9 +230,16 @@ stored; it comes from Z-Wave JS UI on every request, keyed by `deviceKey`.
 ## Build order
 
 1. **Data model and migration** (v1 → v2), with the API and tests. The page
-   keeps working on the migrated House map. *Done 2026-10-10.*
+   keeps working on the migrated House map. *Done 2026-10-10; migration
+   removed after wopr3 upgraded.*
 2. **Maps UI**: picker, New map…, default map, view/edit mode, node list
-   with quick selects, unplaced tray.
+   with quick selects, unplaced tray. *Done 2026-10-10.* As built: the controls stay
+   in the right-hand pane (no top bar) — Edit map under the picker, Set as
+   default in Map ▾, the Nodes section and tray in the pane while editing. The
+   default map opens on every load (the last-viewed map is no longer
+   remembered). Quick selects replace the shown set; switching the starting
+   rule keeps what's shown. Edit mode starts off on each visit. Saving the view
+   (zoom, centre, layers) per map is not built yet.
 3. **Rendering rules**: filtering, ghost repeaters, link rules.
 4. **Network Graph**: live layout as the built-in default.
 5. **Background library**: reuse, replace with keep/clear positions,
@@ -260,7 +254,7 @@ stored; it comes from Z-Wave JS UI on every request, keyed by `deviceKey`.
 **Export map** on a map writes `<map name>.toposite`, a single JSON file
 holding:
 
-- **Header:** `format: "toposite-map"`, `version: 1`, `exportedAt`, and the
+- **Header:** `format: "toposite-map"`, `version: 2`, `exportedAt`, and the
   source's Z-Wave home ID and TopoSite version.
 - **The map:** name, `layout`, canvas size, node rule, view settings, and its
   **background** in full (with this map's `imageRect`):

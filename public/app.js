@@ -2,11 +2,14 @@
 //
 // Reads /toposite/api/nodes and /toposite/api/layout (MAPS.md data model v2:
 // settings, backgrounds, maps) and draws the current map: nodes, routes and
-// neighbor links in Z-Wave JS UI's visual language. On a placed map nodes can be
-// dragged into place (positions saved inside the map, in canvas pixels); unplaced
-// nodes use a temporary auto-layout and are drawn faded. The built-in Network
-// Graph map (layout "graph") is laid out automatically — the live graph layout
-// comes in MAPS.md step 4; until then it uses the same auto-layout.
+// neighbor links in Z-Wave JS UI's visual language. The default map opens on load.
+// Each map has a node list (include all / exclude all + exceptions): hidden nodes
+// aren't drawn. The page is read-only until Edit map is on; then nodes can be shown
+// or hidden, dragged into place on a placed map (positions saved inside the map, in
+// canvas pixels), and dragged in from the "Not placed yet" tray — a shown node with
+// no position on a placed map waits there instead of being drawn. The built-in
+// Network Graph map (layout "graph") is laid out automatically — the live graph
+// layout comes in MAPS.md step 4; until then it uses a simple auto-layout.
 //
 // Backgrounds are images the user supplies (light, and optionally a dark version).
 //
@@ -27,7 +30,6 @@ import {
 const GRID_SIZE = 1000
 const POLL_MS = 30_000
 const REFRESH_COOLDOWN_MS = 60_000
-const MAP_KEY = 'toposite.map'
 const PANE_KEY = 'toposite.paneWidth'
 // Z-Wave JS UI's root, as the browser sees it (keeps working behind a path prefix)
 const ZUI_BASE = location.pathname.replace(/toposite\/.*$/, '')
@@ -57,7 +59,8 @@ addLayersButton()
 const state = {
     nodes: [],
     layout: { settings: {}, backgrounds: [], maps: [] },
-    mapId: readPref(MAP_KEY),
+    mapId: null, // map picked this visit; on load the default map opens
+    edit: false, // Edit map on: node list, tray, dragging
     shownMapId: undefined, // map the view was last fitted to
     imageUrls: new Map(), // "<backgroundId>:<variant>" → {image, url}: object URL of a fetched background
     labelZoom: 0,
@@ -132,6 +135,12 @@ function currentMap() {
     return maps.find((m) => m.id === state.mapId) ?? maps.find((m) => m.id === state.layout.settings?.defaultMapId) ?? maps[0] ?? null
 }
 
+/** Is node n shown on map m? The map's starting rule, flipped for its exceptions. */
+function isShown(m, n) {
+    const flipped = (m?.nodes?.exceptions ?? []).includes(n.key)
+    return (m?.nodes?.start ?? 'include') === 'include' ? !flipped : flipped
+}
+
 /** A placed map's library background, or null. */
 function backgroundOf(map) {
     return map?.background ? state.layout.backgrounds.find((b) => b.id === map.background.id) ?? null : null
@@ -171,28 +180,35 @@ async function draw() {
         applyLabelZoom()
     }
 
-    // Positions: saved placements on this map, auto-layout for the rest
+    // Positions: on a placed map, where shown nodes were put (the rest wait in the
+    // tray); on the Network Graph, the automatic layout of the shown nodes.
+    const shown = state.nodes.filter((n) => isShown(cur, n))
     const placed = new Map()
     for (const p of plan?.placements ?? []) {
         if (p.deviceKey) placed.set(p.deviceKey, [height - p.y, p.x])
     }
-    const side = Math.min(width, height) * 0.9
-    const auto = autoLayout(state.nodes, side)
     const pos = new Map()
-    for (const n of state.nodes) {
-        const saved = n.key && placed.get(n.key)
-        if (saved) {
-            pos.set(n.id, saved)
-        } else {
+    const unplaced = []
+    if (plan) {
+        for (const n of shown) {
+            const saved = n.key && placed.get(n.key)
+            if (saved) pos.set(n.id, saved)
+            else unplaced.push(n)
+        }
+    } else {
+        const side = Math.min(width, height) * 0.9
+        const auto = autoLayout(shown, side)
+        for (const n of shown) {
             const [y, x] = auto.get(n.id) ?? [side / 2, side / 2]
             pos.set(n.id, [y + (height - side) / 2, x + (width - side) / 2])
         }
     }
 
     drawLinks(pos)
-    hintOtherPlans(plan, placed)
-    drawNodes(pos, plan, placed, height)
+    hintPlacing(plan, placed, unplaced)
+    drawNodes(pos, plan, height)
     drawPlaceholders(plan, height)
+    panel.setEdit(cur, unplaced)
 }
 
 function drawLinks(pos) {
@@ -227,41 +243,67 @@ function drawLinks(pos) {
     }
 }
 
-function drawNodes(pos, plan, placed, height) {
+function drawNodes(pos, plan, height) {
     layers.nodes.clearLayers()
     for (const n of state.nodes) {
         const p = pos.get(n.id)
         if (!p) continue
-        const isPlaced = !!(n.key && placed.has(n.key))
         const marker = L.marker(p, {
-            icon: nodeIcon(n, isPlaced || !plan),
+            icon: nodeIcon(n),
             keyboard: false,
-            draggable: !!(plan && n.key),
+            draggable: !!(state.edit && plan && n.key),
         })
-            .bindTooltip(nodeTooltip(n, plan, isPlaced), { direction: 'top', offset: [0, -14] })
+            .bindTooltip(nodeTooltip(n, plan), { direction: 'top', offset: [0, -14] })
             .addTo(layers.nodes)
         // Right-click opens a menu; nothing changes until a menu item is clicked
         marker.on('contextmenu', (e) => {
             L.DomEvent.preventDefault(e.originalEvent)          // no browser menu over nodes
-            openNodeMenu(n, marker, plan, isPlaced)
+            openNodeMenu(n, marker, plan)
         })
-
-        if (!plan || !n.key) continue
-        marker.on('dragend', async () => {
-            const { lat, lng } = marker.getLatLng()
-            try {
-                await api(`maps/${plan.id}/placements`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ deviceKey: n.key, x: lng, y: height - lat }),
-                })
-                panel.setStatus(`Placed ${esc(n.name)}.`)
-            } catch (error) {
-                panel.setStatus(explain(error, `Couldn't save ${esc(n.name)}`))
-            }
-            reload()
-        })
+        if (state.edit && plan && n.key) {
+            marker.on('dragend', () => {
+                const { lat, lng } = marker.getLatLng()
+                placeNode(plan, n, lng, height - lat)
+            })
+        }
     }
+}
+
+/** Save node n's position on a placed map (canvas px, y down). */
+async function placeNode(plan, n, x, y) {
+    try {
+        await api(`maps/${plan.id}/placements`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceKey: n.key, x, y }),
+        })
+        panel.setStatus(`Placed ${esc(n.name)}.`)
+    } catch (error) {
+        panel.setStatus(explain(error, `Couldn't save ${esc(n.name)}`))
+    }
+    reload()
+}
+
+/** Show exactly the nodes in `keys` on map m: exceptions follow from its starting rule. */
+async function setShown(m, keys, start = m.nodes.start) {
+    const all = state.nodes.filter((n) => n.key)
+    const exceptions = start === 'include'
+        ? all.filter((n) => !keys.has(n.key)).map((n) => n.key)
+        : all.filter((n) => keys.has(n.key)).map((n) => n.key)
+    try {
+        await api(`maps/${m.id}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nodes: { start, exceptions } }),
+        })
+    } catch (error) {
+        panel.setStatus(explain(error, "Couldn't change the node list"))
+    }
+    lastLayoutJSON = ''
+    reload()
+}
+
+/** Keys of the nodes currently shown on map m. */
+function shownKeys(m) {
+    return new Set(state.nodes.filter((n) => n.key && isShown(m, n)).map((n) => n.key))
 }
 
 /**
@@ -296,6 +338,13 @@ function drawPlaceholders(plan, height) {
 
 function openPlaceholderMenu(ph, marker, plan) {
     marker.closeTooltip()
+    if (!state.edit) {
+        L.popup({ closeButton: true, autoClose: true, offset: [0, -10] }).setLatLng(marker.getLatLng())
+            .setContent(`<div class="ts-menu"><div class="ts-menu-title">${esc(ph.placeholder.name ?? 'Unknown device')} <span class="muted">not linked</span></div>` +
+                '<div class="muted">Press <b>Edit map</b> to link or delete this placeholder.</div></div>')
+            .openOn(map)
+        return
+    }
     const choices = state.nodes.filter((n) => n.key && n.role !== 'controller')
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((n) => `<option value="${esc(n.key)}">${esc(n.name)}${n.location ? ` — ${esc(n.location)}` : ''} (node ${n.id})</option>`)
@@ -339,26 +388,28 @@ function openPlaceholderMenu(ph, marker, plan) {
     })
 }
 
-/** On a map with nothing placed, say where the placements are (they're per map). */
-function hintOtherPlans(plan, placed) {
-    if (!plan || placed.size) return
+/** On a placed map with nothing placed yet, say how to place nodes (and that positions are per map). */
+function hintPlacing(plan, placed, unplaced) {
+    if (!plan || placed.size || !unplaced.length) return
     const elsewhere = state.layout.maps.filter((m) => m.id !== plan.id && m.placements?.some((pl) => pl.deviceKey))
-    if (!elsewhere.length) return
-    panel.setStatus(`No nodes placed on ${esc(plan.name)} yet. Positions are saved per map — yours are on ` +
-        `${elsewhere.map((p) => esc(p.name)).join(', ')}; pick it from the drop-down to see them.`)
+    panel.setStatus(`No nodes placed on ${esc(plan.name)} yet — press <b>Edit map</b> and drag them in from <b>Not placed yet</b>.` +
+        (elsewhere.length ? ` Positions are saved per map; ${elsewhere.map((p) => esc(p.name)).join(', ')} has its own.` : ''))
 }
 
 /**
  * Node menu (right-click): actions only — details stay on the hover tooltip.
  * Nothing changes until an item is clicked.
  */
-function openNodeMenu(n, marker, plan, isPlaced) {
+function openNodeMenu(n, marker, plan) {
     marker.closeTooltip()
+    const cur = currentMap()
     const actions = []
-    if (plan && isPlaced && n.key) actions.push('<button type="button" data-act="unplace" title="Remove its saved position on this map">Unplace</button>')
-    const hint = !plan ? 'Nodes on the Network Graph are laid out automatically — pick another map to place them.'
-        : !n.key ? 'This node has no placement key yet.'
-            : !isPlaced ? 'Not placed — drag it onto the map.' : ''
+    if (state.edit && n.key) {
+        if (plan) actions.push('<button type="button" data-act="unplace" title="Remove its position on this map — it goes back to Not placed yet">Unplace</button>')
+        actions.push('<button type="button" data-act="hide" title="Stop showing this node on this map">Hide on this map</button>')
+    }
+    const hint = !n.key ? 'This node has no key yet, so it can\'t be changed on a map.'
+        : 'Press <b>Edit map</b> to move, unplace or hide nodes.'
     const div = document.createElement('div')
     div.className = 'ts-menu'
     div.innerHTML = `<div class="ts-menu-title">${esc(nodeLabel(n))} <span class="muted">node ${n.id}</span></div>` +
@@ -371,15 +422,22 @@ function openNodeMenu(n, marker, plan, isPlaced) {
         map.closePopup(popup)
         try {
             await api(`maps/${plan.id}/placements/${encodeURIComponent(n.key)}`, { method: 'DELETE' })
-            panel.setStatus(`${esc(n.name)} unplaced — back to the automatic layout.`)
+            panel.setStatus(`${esc(n.name)} unplaced — it's back in Not placed yet.`)
         } catch (error) {
             panel.setStatus(explain(error, `Couldn't unplace ${esc(n.name)}`))
         }
         reload()
     })
+    div.querySelector('[data-act="hide"]')?.addEventListener('click', () => {
+        map.closePopup(popup)
+        const keys = shownKeys(cur)
+        keys.delete(n.key)
+        panel.setStatus(`${esc(n.name)} hidden on ${esc(cur.name)} — tick it under Nodes on this map to show it again.`)
+        setShown(cur, keys)
+    })
 }
 
-function nodeIcon(n, solid) {
+function nodeIcon(n) {
     const color = nodeColor(n)
     const stroke = n.status === 'ok' ? '#222' : '#fff'
     let shape
@@ -391,14 +449,14 @@ function nodeIcon(n, solid) {
         shape = `<rect x="3" y="3" width="18" height="18" rx="2" fill="${color}" stroke="${stroke}" stroke-width="1.5"/>`
     }
     return L.divIcon({
-        className: `ts-node${solid ? '' : ' ts-unplaced'}`,
+        className: 'ts-node',
         iconSize: [24, 24],
         iconAnchor: [12, 12],
         html: `<svg width="24" height="24" viewBox="0 0 24 24">${shape}</svg><span class="lbl">${esc(nodeLabel(n))}</span>`,
     })
 }
 
-function nodeTooltip(n, plan, isPlaced) {
+function nodeTooltip(n, plan) {
     const route = mainRoute(n)
     const lines = [`<b>${esc(nodeLabel(n))}</b> (node ${n.id})`]
     if (n.location) lines.push(esc(n.location))
@@ -414,9 +472,8 @@ function nodeTooltip(n, plan, isPlaced) {
     }
     if (n.neighbors.length) lines.push(`Neighbors: ${n.neighbors.join(', ')}`)
     if (n.unknownNeighbors?.length) lines.push(`Stale neighbor IDs (no such node): ${n.unknownNeighbors.join(', ')}`)
-    if (plan) {
-        lines.push(`<span class="muted">${isPlaced ? 'Drag to move · right-click for options' : 'Not placed — drag onto the map'}</span>`)
-    }
+    lines.push(`<span class="muted">${state.edit ? (plan ? 'Drag to move · right-click for options' : 'Right-click for options')
+        : 'Right-click for options'}</span>`)
     return lines.join('<br>')
 }
 
@@ -578,19 +635,110 @@ function openReview(pv) {
 
 // ---------------------------------------------------------------- maps
 
-/** Map ▸ New…: an empty map (grid); its first background image sets its size. */
-async function newMap(name) {
-    try {
-        const plan = await api('maps', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name }),
-        })
-        selectPlan(plan.id)
-        panel.setStatus(`Created map ${esc(plan.name)}. Give it a picture with Background ▸ Set image…, then drag nodes onto it.`)
-    } catch (error) {
-        panel.setStatus(explain(error, "Couldn't create the map"))
+/**
+ * Map ▸ New…: name, background (none / one from the library / upload), starting
+ * rule, and optionally a one-time copy of positions from a map on the same background.
+ */
+function openNewMap() {
+    const lay = state.layout
+    const placedMaps = lay.maps.filter((m) => m.layout === 'placed')
+    const usedBy = (bg) => placedMaps.filter((m) => m.background?.id === bg.id).length
+    const overlay = document.createElement('div')
+    overlay.className = 'ts-review'
+    overlay.innerHTML = `<form class="ts-review-box ts-newmap" role="dialog" aria-modal="true" aria-labelledby="ts-nm-title">
+        <h2 id="ts-nm-title">New map</h2>
+        <label class="ts-field"><span>Name</span><input id="ts-nm-name" maxlength="100" required autocomplete="off"></label>
+        <fieldset><legend>Background</legend>
+            <label><input type="radio" name="ts-nm-bg" value="" checked> None — a blank grid</label>
+            ${lay.backgrounds.map((bg) => `<label><input type="radio" name="ts-nm-bg" value="${esc(bg.id)}"> ${esc(bg.name)}
+                <span class="muted">(${bg.widthPx} × ${bg.heightPx} px${bg.imageDark ? ', with dark version' : ''}; used by ${usedBy(bg)} map${usedBy(bg) === 1 ? '' : 's'})</span></label>`).join('')}
+            <label><input type="radio" name="ts-nm-bg" value="upload"> Upload an image… <input type="file" id="ts-nm-file" accept="image/png,image/jpeg,image/webp"></label>
+        </fieldset>
+        <fieldset><legend>Nodes</legend>
+            <label><input type="radio" name="ts-nm-start" value="include" checked> Include all — hide the ones you don't want</label>
+            <label><input type="radio" name="ts-nm-start" value="exclude"> Exclude all — pick the ones you want</label>
+            <div class="muted">This also decides whether nodes added to Z-Wave later appear on this map.</div>
+        </fieldset>
+        <label class="ts-field"><span>Copy positions from</span><select id="ts-nm-copy"></select></label>
+        <div class="muted" id="ts-nm-copyhint"></div>
+        <div class="ts-review-warn" id="ts-nm-warn" hidden></div>
+        <div class="ts-review-buttons">
+            <button type="button" id="ts-nm-cancel">Cancel</button>
+            <button type="submit" id="ts-nm-ok" class="ts-primary">Create</button>
+        </div></form>`
+    document.body.appendChild(overlay)
+    const q = (sel) => overlay.querySelector(sel)
+    const bgChoice = () => overlay.querySelector('input[name="ts-nm-bg"]:checked').value
+    const file = q('#ts-nm-file')
+    // Copying positions only makes sense between maps on the same background
+    const refreshCopy = () => {
+        const bg = bgChoice()
+        const sources = bg === 'upload' ? [] : placedMaps.filter((m) => (m.background?.id ?? '') === bg && m.placements.some((p) => p.deviceKey))
+        q('#ts-nm-copy').innerHTML = '<option value="">Don\'t copy — start with nothing placed</option>' +
+            sources.map((m) => `<option value="${esc(m.id)}">${esc(m.name)} (${m.placements.filter((p) => p.deviceKey).length} placed)</option>`).join('')
+        q('#ts-nm-copy').disabled = !sources.length
+        q('#ts-nm-copyhint').textContent = sources.length ? 'A one-time copy — afterwards the two maps are independent.'
+            : 'Only maps on the same background can be copied from.'
     }
+    overlay.addEventListener('change', (e) => {
+        if (e.target === file && file.files[0]) overlay.querySelector('input[name="ts-nm-bg"][value="upload"]').checked = true
+        refreshCopy()
+    })
+    refreshCopy()
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey) }
+    const onKey = (e) => { if (e.key === 'Escape') close() }
+    document.addEventListener('keydown', onKey)
+    q('#ts-nm-cancel').addEventListener('click', close)
+    q('form').addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const warn = q('#ts-nm-warn')
+        const name = q('#ts-nm-name').value.trim()
+        const bg = bgChoice()
+        if (!name) return q('#ts-nm-name').focus()
+        if (bg === 'upload' && !file.files[0]) { warn.hidden = false; warn.textContent = 'Choose an image to upload.'; return }
+        q('#ts-nm-ok').disabled = true
+        try {
+            const created = await api('maps', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name,
+                    nodes: { start: overlay.querySelector('input[name="ts-nm-start"]:checked').value, exceptions: [] },
+                    backgroundId: bg && bg !== 'upload' ? bg : null,
+                    copyPositionsFrom: q('#ts-nm-copy').value || null,
+                }),
+            })
+            const upload = bg === 'upload' ? file.files[0] : null
+            close()
+            state.edit = true
+            selectPlan(created.id)
+            panel.setStatus(`Created map ${esc(created.name)}. Edit map is on: choose its nodes and drag them in from Not placed yet.`)
+            if (upload) await setBackground(created, upload)
+        } catch (error) {
+            q('#ts-nm-ok').disabled = false
+            warn.hidden = false
+            warn.innerHTML = explain(error, "Couldn't create the map")
+        }
+    })
+    q('#ts-nm-name').focus()
+}
+
+/** Map ▸ Set as default: this map opens when TopoSite loads. */
+async function setDefaultMap(m) {
+    try {
+        await api('settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ defaultMapId: m.id }) })
+        panel.setStatus(`${esc(m.name)} now opens when TopoSite loads.`)
+    } catch (error) {
+        panel.setStatus(explain(error, "Couldn't set the default map"))
+    }
+    lastLayoutJSON = ''
+    reload()
+}
+
+function setEdit(on) {
+    state.edit = on
+    lastLayoutJSON = '' // redraw: dragging and menus follow edit mode
+    reload()
 }
 
 /** Map ▸ Rename… */
@@ -657,7 +805,6 @@ async function deletePlan(plan) {
 
 function selectPlan(id) {
     state.mapId = id
-    writePref(MAP_KEY, id)
     lastLayoutJSON = '' // force a redraw
     reload()
 }
@@ -732,18 +879,21 @@ function addPanel() {
     let els
     let armedDelete = null
     let armedBg = null
-    let nameMode = null // 'new' | 'rename' while the name box is open
+    let nameMode = null // 'rename' while the name box is open
     const Panel = L.Control.extend({
         onAdd() {
             const div = L.DomUtil.create('div', 'ts-panel')
             div.innerHTML = `<h1>TopoSite</h1>
                 <div class="muted" id="ts-summary">Loading…</div>
-                <label class="ts-field"><span>Map</span><select id="ts-plan" title="The map you're looking at"></select></label>
+                <label class="ts-field"><span>Map</span><select id="ts-plan" title="The map you're looking at (★ = opens when TopoSite loads)"></select></label>
+                <button type="button" class="ts-wide" id="ts-edit" aria-pressed="false"
+                    title="Turn on to choose this map's nodes, place them and move them. Off, the map is read-only.">Edit map</button>
 
                 <button type="button" class="ts-wide" id="ts-mapmenu" aria-expanded="false" aria-controls="ts-mapitems">Map ▾</button>
                 <div class="ts-menu-items" id="ts-mapitems" hidden>
-                    <button type="button" id="ts-new" title="Create a new, empty map">New…</button>
+                    <button type="button" id="ts-new" title="Create a new map: name, background, which nodes">New…</button>
                     <button type="button" id="ts-rename" title="Rename the current map">Rename…</button>
+                    <button type="button" id="ts-setdef" title="Open this map when TopoSite loads">Set as default</button>
                     <button type="button" id="ts-del" title="Delete the current map, its background and its node positions (click twice)">Delete</button>
                     <button type="button" id="ts-export" title="Download the current map (background and node positions) as a .toposite file">Export</button>
                     <button type="button" id="ts-import" title="Load a .toposite file as a new map — you review how its nodes match this network first">Import…</button>
@@ -767,10 +917,34 @@ function addPanel() {
 
                 <button type="button" class="ts-wide" id="ts-refresh"
                     title="Asks Z-Wave JS UI to re-read every node's neighbor list from the controller. The radio pauses for a few seconds; allowed once a minute.">Refresh neighbors</button>
-                <div class="muted" id="ts-status"></div>`
+                <div class="muted" id="ts-status"></div>
+
+                <section id="ts-editsec" hidden aria-label="Edit this map">
+                    <h2>Nodes on this map</h2>
+                    <div class="ts-rule" role="radiogroup" aria-label="Starting rule">
+                        <label title="Every node is shown except the unticked ones; nodes added to Z-Wave later appear"><input type="radio" name="ts-start" value="include"> Include all</label>
+                        <label title="Only the ticked nodes are shown; nodes added to Z-Wave later stay hidden"><input type="radio" name="ts-start" value="exclude"> Exclude all</label>
+                    </div>
+                    <div class="ts-quick" aria-label="Show only">
+                        <span class="muted">Show only:</span>
+                        <button type="button" data-q="all">All</button>
+                        <button type="button" data-q="none">None</button>
+                        <button type="button" data-q="mains" title="Always-listening (mains) nodes and the controller">Mains</button>
+                        <button type="button" data-q="battery" title="Battery nodes, including FLiRS">Battery</button>
+                        <select id="ts-qloc" aria-label="Show only one location"></select>
+                    </div>
+                    <input id="ts-nfilter" type="search" placeholder="Filter by name or location" aria-label="Filter nodes">
+                    <div id="ts-nodelist" class="ts-nodelist"></div>
+                    <div id="ts-traysec">
+                        <h2>Not placed yet</h2>
+                        <div class="muted" id="ts-trayhint"></div>
+                        <div id="ts-tray" class="ts-tray"></div>
+                    </div>
+                </section>`
             L.DomEvent.disableClickPropagation(div)
             L.DomEvent.disableScrollPropagation(div)
-            els = Object.fromEntries(['summary', 'plan', 'mapmenu', 'mapitems', 'new', 'rename', 'del', 'export', 'import', 'importfile',
+            els = Object.fromEntries(['summary', 'plan', 'edit', 'setdef', 'editsec', 'nodelist', 'nfilter', 'qloc', 'traysec', 'trayhint', 'tray',
+                'mapmenu', 'mapitems', 'new', 'rename', 'del', 'export', 'import', 'importfile',
                 'nameform', 'name', 'nameok', 'namecancel', 'bgmenu', 'bgitems', 'bg', 'bgdark', 'bgdel', 'bgfile', 'bgdarkfile',
                 'refresh', 'status'].map((k) => [k, div.querySelector(`#ts-${k}`)]))
 
@@ -786,18 +960,20 @@ function addPanel() {
 
             els.plan.addEventListener('change', () => selectPlan(els.plan.value))
 
-            // New / Rename share one name box in the menu (no pop-up dialogs)
+            // Rename uses a name box in the menu; New… opens its own dialog
             const openName = (mode) => {
                 nameMode = mode
                 els.nameform.hidden = false
-                els.name.value = mode === 'rename' ? (currentMap()?.name ?? '') : ''
-                els.name.placeholder = mode === 'new' ? 'Name of the new map' : 'New name'
-                els.nameok.textContent = mode === 'new' ? 'Create' : 'Rename'
+                els.name.value = currentMap()?.name ?? ''
+                els.name.placeholder = 'New name'
+                els.nameok.textContent = 'Rename'
                 els.name.focus()
                 els.name.select()
             }
             const closeName = () => { nameMode = null; els.nameform.hidden = true }
-            els.new.addEventListener('click', () => openName('new'))
+            els.new.addEventListener('click', () => { closeName(); openNewMap() })
+            els.setdef.addEventListener('click', () => { if (currentMap()) setDefaultMap(currentMap()) })
+            els.edit.addEventListener('click', () => setEdit(!state.edit))
             els.rename.addEventListener('click', () => { if (currentMap() && !currentMap().builtin) openName('rename') })
             els.namecancel.addEventListener('click', closeName)
             els.name.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeName() })
@@ -807,8 +983,7 @@ function addPanel() {
                 if (!name) return els.name.focus()
                 const mode = nameMode
                 closeName()
-                if (mode === 'new') newMap(name)
-                else if (mode === 'rename' && currentMap()) renameMap(currentMap(), name)
+                if (mode === 'rename' && currentMap()) renameMap(currentMap(), name)
             })
 
             // Two clicks to delete, instead of a confirm() dialog
@@ -860,6 +1035,54 @@ function addPanel() {
             })
 
             els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
+
+            // Node list: ticking shows a node on this map, unticking hides it
+            els.nodelist.addEventListener('change', (e) => {
+                const key = e.target.dataset.key
+                const m = currentMap()
+                if (!key || !m) return
+                const keys = shownKeys(m)
+                if (e.target.checked) keys.add(key)
+                else keys.delete(key)
+                setShown(m, keys)
+            })
+            // Starting rule: switching keeps what's shown now; it changes what happens to new nodes
+            div.querySelector('.ts-rule').addEventListener('change', (e) => {
+                const m = currentMap()
+                if (m && e.target.value !== m.nodes.start) setShown(m, shownKeys(m), e.target.value)
+            })
+            // Quick selects replace the shown set in one go
+            const quick = (pick) => {
+                const m = currentMap()
+                if (m) setShown(m, new Set(state.nodes.filter((n) => n.key && pick(n)).map((n) => n.key)))
+            }
+            div.querySelector('.ts-quick').addEventListener('click', (e) => {
+                const q = e.target.dataset.q
+                if (q === 'all') quick(() => true)
+                else if (q === 'none') quick(() => false)
+                else if (q === 'mains') quick((n) => n.role !== 'sleeping')
+                else if (q === 'battery') quick((n) => n.role === 'sleeping')
+            })
+            els.qloc.addEventListener('change', () => {
+                const loc = els.qloc.value
+                els.qloc.value = ''
+                if (loc) quick((n) => (n.location || NO_LOC) === loc)
+            })
+            els.nfilter.addEventListener('input', () => filterNodeList())
+
+            // Tray: drag a node onto the map, or click it to drop it in the middle of the view
+            els.tray.addEventListener('dragstart', (e) => {
+                const key = e.target.closest('[data-key]')?.dataset.key
+                if (key) e.dataTransfer.setData('text/x-toposite-node', key)
+            })
+            els.tray.addEventListener('click', (e) => {
+                const key = e.target.closest('[data-key]')?.dataset.key
+                const m = currentMap()
+                const n = state.nodes.find((x) => x.key === key)
+                if (!n || m?.layout !== 'placed') return
+                const c = map.getCenter()
+                placeNode(m, n, c.lng, m.heightPx - c.lat)
+            })
             return div
         },
     })
@@ -874,6 +1097,11 @@ function addPanel() {
         setMaps(maps, selectedId) {
             const sel = maps.find((m) => m.id === selectedId)
             const placedMap = sel?.layout === 'placed'
+            const defaultId = state.layout.settings?.defaultMapId
+            els.setdef.disabled = !sel || sel.id === defaultId
+            els.edit.disabled = !sel
+            els.edit.setAttribute('aria-pressed', String(state.edit))
+            els.edit.textContent = state.edit ? 'Editing — click when done' : 'Edit map'
             els.rename.disabled = !sel || !!sel.builtin
             els.del.disabled = !sel || !!sel.builtin
             els.export.disabled = !placedMap
@@ -883,12 +1111,60 @@ function addPanel() {
             // Each map keeps its own node positions — show how many, so a map with
             // none doesn't look like the positions were lost.
             const count = (m) => (m.placements ?? []).filter((pl) => pl.deviceKey).length
-            els.plan.innerHTML = maps.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}${
+            els.plan.innerHTML = maps.map((m) => `<option value="${esc(m.id)}">${m.id === defaultId ? '★ ' : ''}${esc(m.name)}${
                 m.layout === 'graph' ? ' (automatic layout)' : ` (${count(m)} placed)`}</option>`).join('')
             if (selectedId) els.plan.value = selectedId
         },
+        /** Edit sections: the map's node list and, on a placed map, the unplaced tray. */
+        setEdit(m, unplaced) {
+            els.editsec.hidden = !state.edit || !m
+            if (els.editsec.hidden) return
+            for (const r of els.editsec.querySelectorAll('input[name="ts-start"]')) r.checked = r.value === m.nodes.start
+            const nodes = [...state.nodes].filter((n) => n.key).sort((a, b) => a.name.localeCompare(b.name))
+            const locs = [...new Set(nodes.map((n) => n.location || ''))].sort()
+            els.qloc.innerHTML = '<option value="">Location…</option>' + locs.map((l) =>
+                `<option value="${l ? esc(l) : NO_LOC}">${l ? esc(l) : '(no location)'}</option>`).join('')
+            els.nodelist.innerHTML = nodes.map((n) => `<label data-text="${esc(`${n.name} ${n.location ?? ''}`.toLowerCase())}">
+                <input type="checkbox" data-key="${esc(n.key)}"${isShown(m, n) ? ' checked' : ''}>
+                <span class="ts-shape" style="color:${nodeColor(n)}">${SHAPE_CHAR[n.role] ?? '■'}</span>
+                <span>${esc(nodeLabel(n))} <span class="muted">${n.location ? `${esc(n.location)} · ` : ''}node ${n.id}</span></span></label>`).join('')
+            filterNodeList()
+            const shownCount = nodes.filter((n) => isShown(m, n)).length
+            els.nodelist.setAttribute('aria-label', `${shownCount} of ${nodes.length} nodes shown`)
+
+            els.traysec.hidden = m.layout !== 'placed'
+            if (els.traysec.hidden) return
+            els.trayhint.textContent = unplaced.length
+                ? 'Drag onto the map, or click to drop in the middle of the view.' : 'Every shown node is placed.'
+            els.tray.innerHTML = unplaced.map((n) => `<button type="button" draggable="true" data-key="${esc(n.key)}"
+                title="Drag onto the map, or click to drop it in the middle of the view">
+                <span class="ts-shape" style="color:${nodeColor(n)}">${SHAPE_CHAR[n.role] ?? '■'}</span> ${esc(nodeLabel(n))}</button>`).join('')
+        },
     }
 }
+
+const SHAPE_CHAR = { controller: '★', listening: '⬢', sleeping: '■' }
+const NO_LOC = '\u2205none' // value of the "(no location)" choice; Z-Wave JS UI locations never start with ∅
+
+/** Hide node-list rows that don't match the filter box. */
+function filterNodeList() {
+    const f = document.getElementById('ts-nfilter').value.trim().toLowerCase()
+    for (const row of document.querySelectorAll('#ts-nodelist > label')) row.hidden = !!f && !row.dataset.text.includes(f)
+}
+
+// Dropping a tray node on the map places it there
+map.getContainer().addEventListener('dragover', (e) => {
+    if (e.dataTransfer.types.includes('text/x-toposite-node')) e.preventDefault()
+})
+map.getContainer().addEventListener('drop', (e) => {
+    const key = e.dataTransfer.getData('text/x-toposite-node')
+    const m = currentMap()
+    const n = state.nodes.find((x) => x.key === key)
+    if (!n || m?.layout !== 'placed' || !state.edit) return
+    e.preventDefault()
+    const { lat, lng } = map.mouseEventToLatLng(e)
+    placeNode(m, n, lng, m.heightPx - lat)
+})
 
 /** The right-hand pane (index.html) that holds the controls and the legend. */
 function paneBody() {
@@ -992,7 +1268,6 @@ function addLegend() {
                 <h2>Node color = hops</h2>${HOP_LEGEND.map(([t, c]) => `<div><span class="sw" style="background:${c}"></span>${t}</div>`).join('')}
                 <h2>Link color = data rate</h2>${RATE_LEGEND.map(([t, c]) => `<div><span class="ln" style="border-color:${c}"></span>${t}</div>`).join('')}
                 <div><span class="ln" style="border-top-style:dashed;border-color:#888"></span>backup route</div>
-                <div><span class="sw" style="background:#888;opacity:.45"></span>faded = not placed yet</div>
                 </div>`
             const btn = div.querySelector('.ts-legend-toggle')
             const body = div.querySelector('#ts-legend-body')

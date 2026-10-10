@@ -61,7 +61,6 @@
     #ts-status { margin-top: 0.4em; }
     .ts-row { display: flex; flex-wrap: wrap; gap: 0.45em; align-items: center; margin-top: 0.45em; }
     .ts-row select { font: inherit; flex: 1 1 8em; min-width: 0; }
-    .ts-unplaced { opacity: 0.45; }
     .ts-menu { font-size: 13px; min-width: 160px; }
     .ts-menu-title { font-weight: 600; margin-bottom: 6px; }
     .ts-menu-actions { display: flex; flex-direction: column; gap: 4px; }
@@ -90,6 +89,23 @@
     .ts-field { display: flex; align-items: center; gap: 0.5em; margin-top: 0.5em; }
     .ts-field select { font: inherit; flex: 1 1 auto; min-width: 0; }
     #ts-legend-body { margin-top: 0.5em; }
+    /* Edit mode (MAPS.md step 2): toggle, node list, unplaced tray */
+    #ts-edit[aria-pressed="true"] { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+    #ts-editsec h2 { font-size: 1em; margin: 0.9em 0 0.3em; }
+    .ts-rule { display: flex; flex-wrap: wrap; gap: 0.3em 1em; }
+    .ts-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3em; margin: 0.4em 0; }
+    .ts-quick button { padding: 0.15em 0.55em; }
+    .ts-quick select { font: inherit; flex: 1 1 7em; min-width: 0; }
+    #ts-nfilter { font: inherit; width: 100%; box-sizing: border-box; margin-bottom: 0.3em; }
+    .ts-nodelist { max-height: 40vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 0.3em; padding: 0.2em 0.4em; }
+    .ts-nodelist label:not([hidden]) { display: flex; align-items: baseline; gap: 0.4em; padding: 0.1em 0; cursor: pointer; }
+    .ts-shape { flex: none; width: 1em; text-align: center; text-shadow: 0 0 1px var(--text); }
+    .ts-tray:not([hidden]) { display: flex; flex-wrap: wrap; gap: 0.3em; margin-top: 0.3em; }
+    .ts-tray button { cursor: grab; text-align: left; }
+    .ts-newmap fieldset { border: 1px solid var(--border); border-radius: 0.3em; margin: 0.7em 0 0; padding: 0.3em 0.7em 0.5em; }
+    .ts-newmap fieldset label { display: block; padding: 0.15em 0; }
+    .ts-newmap { max-width: 560px; }
+    .ts-newmap select { font: inherit; flex: 1 1 auto; min-width: 0; }
 
     .ts-node { overflow: visible; }
     .ts-node svg { overflow: visible; }

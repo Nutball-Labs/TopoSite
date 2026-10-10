@@ -56,12 +56,12 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model; adds `key` = `zwave:<homeId>:<nodeId>` from `zwave.homeHex` |
 | `lib/auth.js` | **The only file that reads Z-Wave JS UI's auth files** (`settings.json` `gateway.authEnabled`, `.session-secret` / `SESSION_SECRET`, `users.json`, `TRUSTED_API_LISTEN`) — accepts exactly the logins Z-Wave JS UI accepts; HS256 JWT check with `node:crypto` |
 | `lib/exchange.js` | Map export/import: file format, validation, match proposals (`matchScore`, `proposeMatches`) |
-| `lib/layout.js` | Data model v2 (MAPS.md): settings, background library (image + optional dark variant; files never shared, forked on change, unused ones collected), maps with nested positions (identity snapshots; placeholders) (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); one-time v1 → v2 migration (original kept as `layout.v1.json`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
+| `lib/layout.js` | Data model v2 (MAPS.md): settings, background library (image + optional dark variant; files never shared, forked on change, unused ones collected), maps with nested positions (identity snapshots; placeholders) (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); version 2 only (the v1 migration was removed 2026-10-10); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
 | `lib/store.js` | Store dir resolution (`TOPOSITE_STORE_DIR` → `STORE_DIR` → `<cwd>/store` → two dirs above the plugin; must contain `settings.json`), atomic JSON writes |
 | `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4 — no SN, skipped by sn_audit) |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
 | `ROADMAP.md` | Zoom levels (satellite → floor plan → room panorama), data model, phases |
-| `MAPS.md` | **Product definition (2026-10-09):** maps, reusable backgrounds, per-map positions and node lists, built-in Network Graph, data model v2 and migration, build order. Read before changing the UI or `layout.json` |
+| `MAPS.md` | **Product definition (2026-10-09):** maps, reusable backgrounds, per-map positions and node lists, built-in Network Graph, data model v2, build order. Read before changing the UI or `layout.json` |
 | `scripts/sn_audit.sh` | Regenerates `sn_audit.txt` |
 | `scripts/gen_line_count.sh` | Daily line-count snapshot → `Line_Counts/` |
 
@@ -74,7 +74,7 @@ the request; the static page files are open (no data in them).
 |---|---|
 | `GET /toposite/` | Map page (static files from `public/`; `/toposite` redirects to `/toposite/`) |
 | `GET /toposite/api/layout` | `{success, data: {version: 2, settings: {defaultMapId}, backgrounds[], maps[]}}` (MAPS.md data model). Maps have `layout: 'graph' \| 'placed'`; the built-in `graph` map (Network Graph, `builtin: true`) can't be renamed, deleted or placed on. Placed maps carry `widthPx, heightPx, background: {id, imageRect} \| null, nodes: {start, exceptions[]}, view, placements[]` |
-| `POST /toposite/api/maps` | JSON `{name, widthPx?, heightPx?, nodes?}` → new placed map (default 3000 × 2000, grid until it has a background) |
+| `POST /toposite/api/maps` | JSON `{name, widthPx?, heightPx?, nodes?, backgroundId?, copyPositionsFrom?}` → new placed map (default 3000 × 2000 grid). `backgroundId`: start on a library background, canvas and framing taken from a map already using it (else its natural size). `copyPositionsFrom`: a placed map on the same background (409 otherwise) — canvas, framing and positions copied once |
 | `PATCH /toposite/api/maps/:id` | JSON, any of `{name, nodes, view, widthPx, heightPx, metersPerPixel, padTop, padLeft, expectWidthPx, expectHeightPx}`. Growing keeps positions (top-left origin) and `imageRect`; `padTop`/`padLeft` move everything; `expect*` refuses (409) unless the current size matches. Graph map: `nodes`/`view` only |
 | `DELETE /toposite/api/maps/:id` | Deletes the map and its positions; backgrounds no longer used go too. Graph map: 409. If it was the default, the default becomes `graph` |
 | `PATCH /toposite/api/settings` | JSON `{defaultMapId}` |
@@ -324,7 +324,7 @@ must not clash with the meanings above.
 
 See `ROADMAP.md` for detail.
 
-- **Phase 1 (floor-plan map, Z-Wave):** In progress — map page, backgrounds, placement, export/import; MAPS.md step 1 (data model v2) done, step 2 (maps UI) next
+- **Phase 1 (floor-plan map, Z-Wave):** In progress — map page, backgrounds, placement, export/import; MAPS.md steps 1 (data model v2) and 2 (maps UI) done, step 3 (rendering rules) next
 - **Phase 2 (room panoramas):** Designed
 - **Phase 3 (satellite view):** Designed
 - **Later (Zigbee and IP layers):** Deferred
