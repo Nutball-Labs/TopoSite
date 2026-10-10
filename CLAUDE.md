@@ -55,7 +55,8 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | `index.js` | Plugin entry: default-export class Z-Wave JS UI constructs with `{zwave, mqtt, app, logger}`; registers routes under `/toposite/` |
 | `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model; adds `key` = `zwave:<homeId>:<nodeId>` from `zwave.homeHex` |
 | `lib/auth.js` | **The only file that reads Z-Wave JS UI's auth files** (`settings.json` `gateway.authEnabled`, `.session-secret` / `SESSION_SECRET`, `users.json`, `TRUSTED_API_LISTEN`) — accepts exactly the logins Z-Wave JS UI accepts; HS256 JWT check with `node:crypto` |
-| `lib/layout.js` | Plans (background image + optional dark variant, or none), placements (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
+| `lib/exchange.js` | Map export/import: file format, validation, match proposals (`matchScore`, `proposeMatches`) |
+| `lib/layout.js` | Plans (background image + optional dark variant, or none), placements (per plan, with identity snapshots; placeholders) (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
 | `lib/store.js` | Store dir resolution (`TOPOSITE_STORE_DIR` → `STORE_DIR` → `<cwd>/store` → two dirs above the plugin; must contain `settings.json`), atomic JSON writes |
 | `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4 — no SN, skipped by sn_audit) |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
@@ -80,8 +81,13 @@ the request; the static page files are open (no data in them).
 | `PUT /toposite/api/plans/:id/image?imgWidthPx&imgHeightPx[&variant=dark]` | Body = raw PNG/JPEG/WebP → set or replace the plan's background, keeping placements and scale. New: covers the whole plan; replacement: takes the old `imageRect`. Response has `stretched: true` if the aspect differs >2% |
 | `DELETE /toposite/api/plans/:id/image[?variant=dark]` | Remove the background (both variants; `?variant=dark` just the dark one); everything else stays. `variant=dark` images (plan field `imageDark`) share `imageRect` and are shown while the UI is dark |
 | `GET /toposite/api/plans/:id/image` | The plan image (the page fetches it with the token → object URL) |
-| `PUT /toposite/api/placements` | JSON `{deviceKey, planId, x, y}` (plan pixels, clamped) — one placement per device |
-| `DELETE /toposite/api/placements/:deviceKey` | Back to auto-layout |
+| `PUT /toposite/api/placements` | JSON `{deviceKey, planId, x, y}` (plan pixels, clamped) — one placement per device **per plan**; stores an identity snapshot `seen: {name, deviceId, dsk?}` |
+| `DELETE /toposite/api/plans/:id/placements/:deviceKey` | Unplace on that plan only |
+| `PUT /toposite/api/plans/:id/placeholders/:phId` | JSON `{deviceKey}` → link an imported placeholder; the device takes its spot on that plan |
+| `DELETE /toposite/api/plans/:id/placeholders/:phId` | Delete a placeholder |
+| `GET /toposite/api/plans/:id/export` | `.toposite` file (attachment): map, images (base64), node manifest, positions by `ref` (`lib/exchange.js`) |
+| `POST /toposite/api/import/preview` | Body = raw file (`application/x-toposite`, ≤ 40 MB) → `{token, map, source, entries[] (with proposed key + confidence), nodes[]}`; held 10 min |
+| `POST /toposite/api/import/commit` | JSON `{token, matches: {ref: deviceKey|null}, name?}` → new plan (never overwrites; " (imported)" on a name clash); null → placeholder |
 | `GET /toposite/api/nodes` | `{success, data: [node]}` — node: `id, name, location, role (controller/listening/sleeping), isListening, isFrequentListening, isRouting, status (ok/dead/failed), neighbors[], unknownNeighbors[], lwr, nlwr` (routes: `hops, repeaters[], rssi, repeaterRSSI[], protocolDataRate, failedBetween`). Virtual nodes (broadcast 255, multicast) are skipped. RSSI is dBm, `'saturated'`, `'no-signal'` or `null` (zwave-js RssiError 126/125/127). `unknownNeighbors` = IDs in the controller's neighbor table with no node (removed nodes) |
 
 ---

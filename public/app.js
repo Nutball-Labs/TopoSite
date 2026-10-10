@@ -163,7 +163,7 @@ async function draw() {
     // Positions: saved placements on this plan, auto-layout for the rest
     const placed = new Map()
     for (const p of state.layout.placements) {
-        if (plan && p.planId === plan.id) placed.set(p.deviceKey, [height - p.y, p.x])
+        if (plan && p.planId === plan.id && p.deviceKey) placed.set(p.deviceKey, [height - p.y, p.x])
     }
     const side = Math.min(width, height) * 0.9
     const auto = autoLayout(state.nodes, side)
@@ -181,6 +181,7 @@ async function draw() {
     drawLinks(pos)
     hintOtherPlans(plan, placed)
     drawNodes(pos, plan, placed, height)
+    drawPlaceholders(plan, height)
 }
 
 function drawLinks(pos) {
@@ -252,6 +253,81 @@ function drawNodes(pos, plan, placed, height) {
     }
 }
 
+/**
+ * Placeholders: imported positions whose node wasn't matched. Drawn as dashed,
+ * hollow markers labelled "not linked"; right-click to Link to… a device or Delete.
+ */
+function drawPlaceholders(plan, height) {
+    if (!plan) return
+    for (const ph of state.layout.placements) {
+        if (ph.planId !== plan.id || !ph.placeholder) continue
+        const label = `${ph.placeholder.name ?? 'Unknown device'} — not linked`
+        const marker = L.marker([height - ph.y, ph.x], {
+            keyboard: false,
+            icon: L.divIcon({
+                className: 'ts-node ts-ph',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12],
+                html: '<svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /></svg>' +
+                    `<span class="lbl">${esc(label)}</span>`,
+            }),
+        })
+            .bindTooltip(`<b>${esc(label)}</b><br>${[ph.placeholder.loc, ph.placeholder.productLabel ?? ph.placeholder.deviceId]
+                .filter(Boolean).map(esc).join(' · ')}<br><span class="muted">Imported position with no matching device — right-click to link it</span>`,
+            { direction: 'top', offset: [0, -14] })
+            .addTo(layers.nodes)
+        marker.on('contextmenu', (e) => {
+            L.DomEvent.preventDefault(e.originalEvent)
+            openPlaceholderMenu(ph, marker, plan)
+        })
+    }
+}
+
+function openPlaceholderMenu(ph, marker, plan) {
+    marker.closeTooltip()
+    const choices = state.nodes.filter((n) => n.key && n.role !== 'controller')
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((n) => `<option value="${esc(n.key)}">${esc(n.name)}${n.location ? ` — ${esc(n.location)}` : ''} (node ${n.id})</option>`)
+    const div = document.createElement('div')
+    div.className = 'ts-menu'
+    div.innerHTML = `<div class="ts-menu-title">${esc(ph.placeholder.name ?? 'Unknown device')} <span class="muted">not linked</span></div>
+        <div class="ts-menu-actions">
+            <select data-act="pick" aria-label="Device to link"><option value="">Link to…</option>${choices.join('')}</select>
+            <button type="button" data-act="link" disabled title="The chosen device takes this spot">Link</button>
+            <button type="button" data-act="delete" title="Remove this placeholder (click twice)">Delete placeholder</button>
+        </div>`
+    const popup = L.popup({ closeButton: true, autoClose: true, offset: [0, -10] })
+        .setLatLng(marker.getLatLng()).setContent(div).openOn(map)
+    const pick = div.querySelector('[data-act="pick"]')
+    const link = div.querySelector('[data-act="link"]')
+    const del = div.querySelector('[data-act="delete"]')
+    pick.addEventListener('change', () => { link.disabled = !pick.value })
+    link.addEventListener('click', async () => {
+        map.closePopup(popup)
+        try {
+            await api(`plans/${plan.id}/placeholders/${encodeURIComponent(ph.id)}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceKey: pick.value }),
+            })
+            panel.setStatus(`Linked — ${esc(pick.selectedOptions[0].textContent)} now sits at that spot.`)
+        } catch (error) {
+            panel.setStatus(explain(error, "Couldn't link the placeholder"))
+        }
+        reload()
+    })
+    let armed = false
+    del.addEventListener('click', async () => {
+        if (!armed) { armed = true; del.textContent = 'Really delete?'; return }
+        map.closePopup(popup)
+        try {
+            await api(`plans/${plan.id}/placeholders/${encodeURIComponent(ph.id)}`, { method: 'DELETE' })
+            panel.setStatus('Placeholder deleted.')
+        } catch (error) {
+            panel.setStatus(explain(error, "Couldn't delete the placeholder"))
+        }
+        reload()
+    })
+}
+
 /** On a plan with nothing placed, say where the placements are (they're per plan). */
 function hintOtherPlans(plan, placed) {
     if (!plan || placed.size) return
@@ -284,7 +360,7 @@ function openNodeMenu(n, marker, plan, isPlaced) {
     div.querySelector('[data-act="unplace"]')?.addEventListener('click', async () => {
         map.closePopup(popup)
         try {
-            await api(`placements/${encodeURIComponent(n.key)}`, { method: 'DELETE' })
+            await api(`plans/${plan.id}/placements/${encodeURIComponent(n.key)}`, { method: 'DELETE' })
             panel.setStatus(`${esc(n.name)} unplaced — back to the automatic layout.`)
         } catch (error) {
             panel.setStatus(explain(error, `Couldn't unplace ${esc(n.name)}`))
@@ -355,6 +431,139 @@ async function planImageUrl(plan, variant = 'light') {
 function isDarkTheme() {
     const t = document.documentElement.dataset.theme
     return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+// ---------------------------------------------------------------- export / import
+
+/** Map ▸ Export: download the current map as <name>.toposite. */
+async function exportMap(plan) {
+    try {
+        const res = await api(`plans/${plan.id}/export`, { raw: true })
+        const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? `${plan.name}.toposite`
+        const url = URL.createObjectURL(await res.blob())
+        const a = Object.assign(document.createElement('a'), { href: url, download: name })
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 10_000)
+        panel.setStatus(`Exported ${esc(plan.name)} as ${esc(name)}.`)
+    } catch (error) {
+        panel.setStatus(explain(error, 'Export failed'))
+    }
+}
+
+/** Map ▸ Import…: upload the file for a preview, then review every node before anything is created. */
+async function importPreview(file) {
+    panel.setStatus(`Reading ${esc(file.name)}…`)
+    try {
+        const preview = await api('import/preview', {
+            method: 'POST', headers: { 'Content-Type': 'application/x-toposite' }, body: file,
+        })
+        panel.setStatus('')
+        openReview(preview)
+    } catch (error) {
+        panel.setStatus(explain(error, "Couldn't read that file"))
+    }
+}
+
+const CONFIDENCE = {
+    certain: ['Certain', 'Same device (same network and node, or same S2 key)'],
+    likely: ['Likely', 'Same name and same device model'],
+    possible: ['Possible — check', 'Same model in the same location, or same name only'],
+    none: ['No match', 'No device here looks like it'],
+}
+
+/** The review screen: every node in the file, its proposed match (changeable), then Import. */
+function openReview(pv) {
+    const overlay = document.createElement('div')
+    overlay.className = 'ts-review'
+    const options = (selected) => ['<option value="">No match — keep as placeholder</option>',
+        ...[...pv.nodes].sort((a, b) => a.name.localeCompare(b.name)).map((n) =>
+            `<option value="${esc(n.key)}"${n.key === selected ? ' selected' : ''}>${esc(n.name)}${n.location ? ` — ${esc(n.location)}` : ''} (node ${n.id})</option>`)].join('')
+    const rows = pv.entries.map((e) => {
+        const [label, why] = CONFIDENCE[e.confidence] ?? CONFIDENCE.none
+        const detail = [e.loc, e.productLabel ?? e.deviceId, e.nodeId != null ? `was node ${e.nodeId}` : null].filter(Boolean).map(esc).join(' · ')
+        return `<tr data-ref="${esc(e.ref)}" data-conf="${esc(e.confidence)}">
+            <td><b>${esc(e.name ?? 'Unnamed device')}</b><div class="muted">${detail}</div></td>
+            <td><select data-ref="${esc(e.ref)}" aria-label="Match for ${esc(e.name ?? e.ref)}">${options(e.key)}</select></td>
+            <td><span class="ts-conf ts-conf-${esc(e.confidence)}" title="${esc(why)}">${label}</span>${e.tied
+                ? `<div class="muted">${e.tied} equally good candidates — pick one</div>` : ''}</td></tr>`
+    }).join('')
+    const m = pv.map
+    const facts = [`${m.widthPx} × ${m.heightPx} px`, m.hasImage ? 'background image' : 'no background',
+        m.hasDarkImage ? 'dark-mode image' : null, pv.source?.exportedAt ? `exported ${pv.source.exportedAt.slice(0, 10)}` : null]
+        .filter(Boolean).join(' · ')
+    overlay.innerHTML = `<div class="ts-review-box" role="dialog" aria-modal="true" aria-labelledby="ts-review-title">
+        <h2 id="ts-review-title">Import map</h2>
+        <div class="muted">${esc(facts)}</div>
+        <label class="ts-field"><span>New map name</span><input id="ts-review-name" maxlength="100" value="${esc(m.name)}"></label>
+        <p class="muted">Check each device. Choose the matching device on this network, or keep it as a placeholder
+            (a dashed marker you can link later). Nothing is created until you press Import.</p>
+        <div class="ts-review-filter" role="radiogroup" aria-label="Show">
+            <label><input type="radio" name="ts-rf" value="all" checked> All (${pv.entries.length})</label>
+            <label><input type="radio" name="ts-rf" value="unconfirmed"> Not certain</label>
+            <label><input type="radio" name="ts-rf" value="none"> No match chosen</label>
+        </div>
+        ${pv.entries.length
+            ? `<table class="ts-review-table"><thead><tr><th>In the file</th><th>Matches on this network</th><th>Confidence</th></tr></thead><tbody>${rows}</tbody></table>`
+            : '<p>This map has no placed nodes — only its background will be imported.</p>'}
+        <div class="ts-review-warn" id="ts-review-warn" hidden></div>
+        <div class="ts-review-buttons">
+            <button type="button" id="ts-review-cancel">Cancel</button>
+            <button type="button" id="ts-review-ok" class="ts-primary">Import</button>
+        </div></div>`
+    document.body.appendChild(overlay)
+    const q = (sel) => overlay.querySelector(sel)
+    const selects = [...overlay.querySelectorAll('select[data-ref]')]
+    const ok = q('#ts-review-ok')
+    const warn = q('#ts-review-warn')
+
+    const refresh = () => {
+        const counts = {}
+        for (const sel of selects) if (sel.value) counts[sel.value] = (counts[sel.value] ?? 0) + 1
+        let dups = 0
+        for (const sel of selects) {
+            const dup = !!sel.value && counts[sel.value] > 1
+            sel.closest('tr').classList.toggle('ts-dup', dup)
+            if (dup) dups++
+        }
+        const linked = selects.filter((sel) => sel.value).length
+        warn.hidden = !dups
+        warn.textContent = dups ? 'The same device is chosen for more than one entry — each device can only take one spot.' : ''
+        ok.disabled = dups > 0
+        ok.textContent = `Import (${linked} linked, ${selects.length - linked} placeholder${selects.length - linked === 1 ? '' : 's'})`
+        const filter = overlay.querySelector('input[name="ts-rf"]:checked').value
+        for (const tr of overlay.querySelectorAll('tbody tr')) {
+            const sel = tr.querySelector('select')
+            tr.hidden = (filter === 'unconfirmed' && tr.dataset.conf === 'certain') || (filter === 'none' && !!sel.value)
+        }
+    }
+    overlay.addEventListener('change', refresh)
+    refresh()
+
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey) }
+    const onKey = (e) => { if (e.key === 'Escape') close() }
+    document.addEventListener('keydown', onKey)
+    q('#ts-review-cancel').addEventListener('click', close)
+    ok.addEventListener('click', async () => {
+        ok.disabled = true
+        const matches = Object.fromEntries(selects.map((sel) => [sel.dataset.ref, sel.value || null]))
+        try {
+            const res = await api('import/commit', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: pv.token, matches, name: q('#ts-review-name').value.trim() || undefined }),
+            })
+            close()
+            selectPlan(res.plan.id)
+            panel.setStatus(`Imported ${esc(res.plan.name)}: ${res.linked} node${res.linked === 1 ? '' : 's'} placed` +
+                (res.placeholders ? `, ${res.placeholders} placeholder${res.placeholders === 1 ? '' : 's'} to link (right-click a dashed marker).` : '.'))
+        } catch (error) {
+            ok.disabled = false
+            warn.hidden = false
+            warn.innerHTML = explain(error, 'Import failed')
+        }
+    })
+    q('#ts-review-name').focus()
 }
 
 // ---------------------------------------------------------------- plans
@@ -519,7 +728,6 @@ function addPanel() {
     const Panel = L.Control.extend({
         onAdd() {
             const div = L.DomUtil.create('div', 'ts-panel')
-            const notBuilt = 'Not built yet — planned as step 6 in MAPS.md (one map per file, reviewed node matching)'
             div.innerHTML = `<h1>TopoSite</h1>
                 <div class="muted" id="ts-summary">Loading…</div>
                 <label class="ts-field"><span>Map</span><select id="ts-plan" title="The map you're looking at"></select></label>
@@ -529,8 +737,9 @@ function addPanel() {
                     <button type="button" id="ts-new" title="Create a new, empty map">New…</button>
                     <button type="button" id="ts-rename" title="Rename the current map">Rename…</button>
                     <button type="button" id="ts-del" title="Delete the current map, its background and its node positions (click twice)">Delete</button>
-                    <button type="button" id="ts-export" disabled title="${notBuilt}">Export</button>
-                    <button type="button" id="ts-import" disabled title="${notBuilt}">Import</button>
+                    <button type="button" id="ts-export" title="Download the current map (background and node positions) as a .toposite file">Export</button>
+                    <button type="button" id="ts-import" title="Load a .toposite file as a new map — you review how its nodes match this network first">Import…</button>
+                    <input type="file" id="ts-importfile" accept=".toposite,application/json" hidden>
                     <form class="ts-nameform" id="ts-nameform" hidden>
                         <input id="ts-name" maxlength="100" autocomplete="off" aria-label="Map name">
                         <button type="submit" id="ts-nameok">OK</button>
@@ -553,7 +762,7 @@ function addPanel() {
                 <div class="muted" id="ts-status"></div>`
             L.DomEvent.disableClickPropagation(div)
             L.DomEvent.disableScrollPropagation(div)
-            els = Object.fromEntries(['summary', 'plan', 'mapmenu', 'mapitems', 'new', 'rename', 'del', 'export', 'import',
+            els = Object.fromEntries(['summary', 'plan', 'mapmenu', 'mapitems', 'new', 'rename', 'del', 'export', 'import', 'importfile',
                 'nameform', 'name', 'nameok', 'namecancel', 'bgmenu', 'bgitems', 'bg', 'bgdark', 'bgdel', 'bgfile', 'bgdarkfile',
                 'refresh', 'status'].map((k) => [k, div.querySelector(`#ts-${k}`)]))
 
@@ -634,6 +843,14 @@ function addPanel() {
                 removeBackground(plan)
             })
 
+            els.export.addEventListener('click', () => { if (currentPlan()) exportMap(currentPlan()) })
+            els.import.addEventListener('click', () => els.importfile.click())
+            els.importfile.addEventListener('change', () => {
+                const file = els.importfile.files[0]
+                els.importfile.value = ''
+                if (file) importPreview(file)
+            })
+
             els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
             return div
         },
@@ -650,12 +867,13 @@ function addPanel() {
             const sel = plans.find((p) => p.id === selectedId)
             els.rename.disabled = !sel
             els.del.disabled = !sel
+            els.export.disabled = !sel
             els.bgmenu.disabled = !sel
             els.bgdel.disabled = !(sel?.image || sel?.imageDark)
             els.plan.disabled = plans.length === 0
             // Each map keeps its own node positions — show how many, so a map with
             // none doesn't look like the positions were lost.
-            const count = (id) => placements.filter((pl) => pl.planId === id).length
+            const count = (id) => placements.filter((pl) => pl.planId === id && pl.deviceKey).length
             els.plan.innerHTML = plans.length
                 ? plans.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${count(p.id)} placed)</option>`).join('')
                 : '<option>No maps yet — Map ▸ New…</option>'

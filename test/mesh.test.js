@@ -2,7 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { toNode, toRoute, toRSSI, getNodes, homeIdOf } from '../lib/mesh.js'
+import { toNode, toRoute, toRSSI, getNodes, homeIdOf, deviceIdOf } from '../lib/mesh.js'
 
 test('controller, mains and battery nodes get the Z-Wave JS UI roles', () => {
     assert.equal(toNode({ id: 1, isControllerNode: true, isListening: true, available: true }).role, 'controller')
@@ -62,6 +62,13 @@ test('nodes get a zwave:<homeId>:<nodeId> placement key', () => {
     assert.equal(nodes[0].key, 'zwave:cdfbb3c7:2')
     assert.equal(homeIdOf({ homeHex: undefined }), null)
     assert.equal(getNodes({ getNodes: () => [{ id: 2, available: true }] })[0].key, null)
+})
+
+test('nodes carry identity for export/import matching', () => {
+    const n = toNode({ id: 14, available: true, deviceId: '57-1-17479', productLabel: 'T6', manufacturer: 'Honeywell', firmwareVersion: '1.2' })
+    assert.deepEqual([n.deviceId, n.productLabel, n.manufacturer, n.firmwareVersion, n.dsk], ['57-1-17479', 'T6', 'Honeywell', '1.2', null])
+    assert.equal(deviceIdOf({ manufacturerId: 29, productId: 12341, productType: 17479 }), '29-12341-17479')
+    assert.equal(deviceIdOf({ manufacturerId: 29 }), null)
 })
 
 test('getNodes skips virtual nodes and separates stale neighbor IDs', () => {

@@ -82,8 +82,9 @@ The layout should feel like an app, not a debug page.
   for routes, backup routes, neighbors and nodes.
 - **Pane controls (user, 2026-10-10), as built today:**
   - **Map** drop-down: the current map.
-  - **Map ▾**: New… · Rename… · Delete (two clicks) · Export · Import.
-    Export and Import are greyed out until step 6.
+  - **Map ▾**: New… · Rename… · Delete (two clicks) · Export · Import….
+    Export/import are built on today's plans (2026-10-10); node lists join
+    the file format when maps get them.
   - **Background ▾**: Set image… · Set dark-mode image… · Unset (two clicks).
   - **Refresh neighbors**.
   - **Legend**: toggle, starts hidden.

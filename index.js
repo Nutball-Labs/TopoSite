@@ -10,12 +10,17 @@
 // accepts (open when Z-Wave JS UI's auth is off). The static page files carry
 // no data and stay open so the page can load and ask for a login.
 
-import { createReadStream } from 'node:fs'
+import { createReadStream, readFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { authenticate } from './lib/auth.js'
-import { getNodes } from './lib/mesh.js'
+import { getNodes, homeIdOf } from './lib/mesh.js'
 import { Layout, MAX_IMAGE_BYTES, httpError } from './lib/layout.js'
+import { buildExport, parseImport, proposeMatches, MAX_FILE_BYTES } from './lib/exchange.js'
 import { resolveStoreDir } from './lib/store.js'
+
+const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
+const IMPORT_TTL_MS = 10 * 60 * 1000   // a previewed import file is held this long for its commit
 
 export const BASE = '/toposite'
 export const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url))
@@ -28,6 +33,7 @@ export default class TopoSite {
         this.env = options.env ?? process.env
         this.storeDir = options.storeDir !== undefined ? options.storeDir : resolveStoreDir(this.env)
         this.layout = this.storeDir ? new Layout(this.storeDir) : null
+        this.imports = new Map() // import preview token → {file, expires}
         if (!this.storeDir) this.logger.error('TopoSite: Z-Wave JS UI store directory not found — set TOPOSITE_STORE_DIR')
 
         const api = (method, path, handler) => this.app[method](`${BASE}/api${path}`, this._guard(handler))
@@ -95,8 +101,76 @@ export default class TopoSite {
         })
 
         // Body (JSON, parsed by Z-Wave JS UI's express.json): {deviceKey, planId, x, y}
-        api('put', '/placements', (req) => this._layout().setPlacement(req.body ?? {}))
-        api('delete', '/placements/:deviceKey', (req) => this._layout().removePlacement(req.params.deviceKey))
+        // Body (JSON): {deviceKey, planId, x, y}. The node's identity is snapshotted
+        // with the placement so the link can be repaired after a re-inclusion.
+        api('put', '/placements', (req) => {
+            const body = req.body ?? {}
+            return this._layout().setPlacement({ ...body, seen: this._seen(body.deviceKey) })
+        })
+        // Unplace a device on one plan; its spots on other plans stay
+        api('delete', '/plans/:id/placements/:deviceKey', (req) =>
+            this._layout().removePlacement(req.params.id, req.params.deviceKey))
+
+        // Placeholders (imported positions with no matched node): link to a device, or delete
+        api('put', '/plans/:id/placeholders/:phId', (req) => {
+            const key = req.body?.deviceKey
+            return this._layout().linkPlaceholder(req.params.id, req.params.phId, key, this._seen(key))
+        })
+        api('delete', '/plans/:id/placeholders/:phId', (req) =>
+            this._layout().removePlaceholder(req.params.id, req.params.phId))
+
+        // Export one map as a .toposite file (MAPS.md "Import / export")
+        api('get', '/plans/:id/export', async (req, res) => {
+            const out = await buildExport({
+                layout: await this._layout().load(),
+                planId: req.params.id,
+                nodes: this._nodes(),
+                imagesDir: this._layout().imagesDir,
+                homeId: this.zwave ? homeIdOf(this.zwave) : null,
+                version: VERSION,
+            })
+            const file = (out.map.name.replace(/[^\w .()-]+/g, '_').trim() || 'map') + '.toposite'
+            res.set('Content-Disposition', `attachment; filename="${file}"`)
+            res.type('application/json').send(JSON.stringify(out))
+            return undefined // response already sent
+        })
+
+        // Import, step 1: upload the file (raw bytes — Z-Wave JS UI's 5 MB JSON limit
+        // doesn't apply), get proposed matches and a token. Nothing is created yet.
+        api('post', '/import/preview', async (req) => {
+            const file = parseImport(await readBody(req, MAX_FILE_BYTES))
+            const nodes = this._nodes()
+            const proposals = proposeMatches(file.nodes, nodes, this.zwave ? homeIdOf(this.zwave) : null)
+            const token = randomBytes(12).toString('hex')
+            this._sweepImports()
+            this.imports.set(token, { file, expires: Date.now() + IMPORT_TTL_MS })
+            return {
+                token,
+                map: {
+                    name: file.map.name,
+                    widthPx: file.map.widthPx,
+                    heightPx: file.map.heightPx,
+                    hasImage: !!file.images.image,
+                    hasDarkImage: !!file.images.imageDark,
+                },
+                source: file.source,
+                entries: file.nodes.map((e) => ({ ...e, ...proposals[e.ref] })),
+                nodes: nodes.filter((n) => n.key && n.role !== 'controller').map((n) =>
+                    ({ key: n.key, id: n.id, name: n.name, location: n.location, deviceId: n.deviceId, productLabel: n.productLabel })),
+            }
+        })
+
+        // Import, step 2: Body (JSON) {token, matches: {ref: deviceKey | null}, name?}.
+        // Creates a new map; never overwrites an existing one.
+        api('post', '/import/commit', async (req) => {
+            const { token, matches, name } = req.body ?? {}
+            this._sweepImports()
+            const held = this.imports.get(token)
+            if (!held) throw httpError(410, 'That import has expired — choose the file again')
+            const result = await this._layout().importMap(held.file, matches, { nodes: this._nodes(), name })
+            this.imports.delete(token)
+            return result
+        })
 
         // The page uses relative URLs, so it must be loaded with the trailing slash.
         // Relative redirect keeps it working behind a path prefix (reverse proxy).
@@ -116,6 +190,26 @@ export default class TopoSite {
         })
 
         this.logger.info(`TopoSite loaded — map at ${BASE}/, data in ${this.storeDir ?? '(no store dir)'}/toposite`)
+    }
+
+    /** This install's nodes in TopoSite's model, or [] when Z-Wave isn't running. */
+    _nodes() {
+        try {
+            return this.zwave ? getNodes(this.zwave) : []
+        } catch {
+            return []
+        }
+    }
+
+    /** Identity snapshot for a placement: {name, deviceId, dsk} of the node, if known. */
+    _seen(deviceKey) {
+        const n = this._nodes().find((node) => node.key === deviceKey)
+        return n ? { name: n.name, deviceId: n.deviceId, dsk: n.dsk } : undefined
+    }
+
+    _sweepImports() {
+        const now = Date.now()
+        for (const [token, held] of this.imports) if (held.expires < now) this.imports.delete(token)
     }
 
     _layout() {

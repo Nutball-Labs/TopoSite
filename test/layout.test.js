@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { Layout, sniffImage, imageRectOf } from '../lib/layout.js'
+import { Layout, sniffImage, imageRectOf, cleanSeen } from '../lib/layout.js'
 import { resolveStoreDir } from '../lib/store.js'
 import { mkdir } from 'node:fs/promises'
 
@@ -60,7 +60,7 @@ test('placements: one per device, clamped to the plan, removed with their plan',
     await assert.rejects(layout.setPlacement({ deviceKey: '../etc', planId: plan.id, x: 1, y: 1 }), { status: 400 })
     await assert.rejects(layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:3', planId: plan.id, x: '1', y: 1 }), { status: 400 })
 
-    await layout.removePlacement('zwave:cdfbb3c7:2')
+    await layout.removePlacement(plan.id, 'zwave:cdfbb3c7:2')
     assert.deepEqual((await layout.load()).placements, [])
 
     await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:4', planId: plan.id, x: 1, y: 1 })
@@ -204,6 +204,48 @@ test("a map's first image sets its size while nothing is placed; otherwise the s
     const kept = await layout.setImage(used.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550 })
     assert.deepEqual([kept.widthPx, kept.heightPx], [3000, 2000], 'placed nodes keep their coordinates')
     assert.equal(kept.stretched, true)
+})
+
+test('positions are per plan: placing or unplacing a node on one plan leaves the others alone', async () => {
+    const layout = await fresh()
+    const house = await layout.addBlankPlan({ name: 'House', widthPx: 1000, heightPx: 1000 })
+    const shop = await layout.addBlankPlan({ name: 'Shop', widthPx: 1000, heightPx: 1000 })
+    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: house.id, x: 10, y: 10 })
+    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: shop.id, x: 90, y: 90 })
+    let saved = (await layout.load()).placements
+    assert.deepEqual(saved.map((p) => [p.planId, p.x]).sort(), [[house.id, 10], [shop.id, 90]].sort(), 'the House spot survives placing on Shop')
+    await layout.removePlacement(shop.id, 'zwave:cdfbb3c7:2')
+    saved = (await layout.load()).placements
+    assert.deepEqual(saved.map((p) => p.planId), [house.id], 'unplacing on Shop keeps House')
+})
+
+test('placements keep an identity snapshot; placeholders can be linked to a device or deleted', async () => {
+    const layout = await fresh()
+    const plan = await layout.addBlankPlan({ name: 'House', widthPx: 1000, heightPx: 1000 })
+    const p = await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 1, y: 2,
+        seen: { name: 'Lights', deviceId: '29-12341-17479', evil: 'x' } })
+    assert.deepEqual(p.seen, { name: 'Lights', deviceId: '29-12341-17479' })
+    assert.deepEqual(cleanSeen({ name: 5, dsk: 'abc' }), { dsk: 'abc' })
+
+    // a placeholder as an import would write it, plus the same device already placed elsewhere on the plan
+    const raw = await layout.load()
+    raw.placements.push({ id: 'ph1', planId: plan.id, deviceKey: null, x: 300, y: 400,
+        placeholder: { name: 'Thermostat', loc: 'Hallway', deviceId: '1-2-3', productLabel: 'T6' } })
+    await writeFile(layout.file, JSON.stringify(raw))
+
+    const linked = await layout.linkPlaceholder(plan.id, 'ph1', 'zwave:cdfbb3c7:2', { name: 'Lights' })
+    assert.deepEqual(linked, { deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 300, y: 400, seen: { name: 'Lights' } })
+    const after = (await layout.load()).placements
+    assert.equal(after.length, 1, "the device's old spot on this plan is replaced by the placeholder's")
+    assert.equal(after[0].placeholder, undefined)
+    await assert.rejects(layout.linkPlaceholder(plan.id, 'ph1', 'zwave:cdfbb3c7:2'), { status: 404 }, 'already linked')
+
+    const raw2 = await layout.load()
+    raw2.placements.push({ id: 'ph2', planId: plan.id, deviceKey: null, x: 5, y: 5, placeholder: { name: 'Gone' } })
+    await writeFile(layout.file, JSON.stringify(raw2))
+    await layout.removePlaceholder(plan.id, 'ph2')
+    assert.equal((await layout.load()).placements.length, 1)
+    await assert.rejects(layout.removePlaceholder(plan.id, 'ph2'), { status: 404 })
 })
 
 test("store dir: env overrides, then <cwd>/store, then two levels above the plugin", async () => {

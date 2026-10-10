@@ -68,8 +68,10 @@ its left edge to resize) has:
 
 - **Map** (drop-down): the map you're looking at, with how many nodes are
   placed on each.
-- **Map ▾**: **New…**, **Rename…**, **Delete** (click twice). Export and
-  Import are listed but not built yet.
+- **Map ▾**: **New…**, **Rename…**, **Delete** (click twice), **Export**
+  (downloads the map as a `.toposite` file) and **Import…** (loads one as a new
+  map — you review how each device matches this network first; unmatched ones
+  become dashed placeholders you can right-click to link later).
 - **Background ▾**: **Set image…** (any PNG, JPEG or WebP up to 25 MB — a floor
   plan export, a drawing, a satellite screenshot), **Set dark-mode image…**
   (shown while Z-Wave JS UI is in dark mode), **Unset**. Node positions stay

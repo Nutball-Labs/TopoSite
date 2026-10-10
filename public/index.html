@@ -107,6 +107,31 @@
     .ts-layers-pop { margin-top: 6px; padding: 8px 12px; background: var(--panel); color: var(--text);
         border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / 30%); }
     .ts-layers-pop label { display: block; white-space: nowrap; padding: 3px 0; cursor: pointer; }
+    /* Placeholders: imported positions with no matched device */
+    .ts-ph circle { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 3 3; }
+
+    /* Import review screen */
+    .ts-review { position: fixed; inset: 0; z-index: 2000; background: rgb(0 0 0 / 55%); overflow-y: auto; }
+    .ts-review-box { background: var(--panel); color: var(--text); max-width: 960px; margin: 4vh auto; padding: 1em 1.3em;
+        border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 6px 24px rgb(0 0 0 / 40%); }
+    .ts-review-box h2 { margin: 0 0 0.2em; font-size: 1.3em; }
+    .ts-review-box .ts-field input { font: inherit; flex: 1 1 auto; min-width: 0; }
+    .ts-review-filter { display: flex; flex-wrap: wrap; gap: 1em; margin: 0.4em 0 0.6em; }
+    .ts-review-table { width: 100%; border-collapse: collapse; }
+    .ts-review-table th { text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); padding: 0.3em; }
+    .ts-review-table td { vertical-align: top; padding: 0.4em 0.3em; border-bottom: 1px solid var(--border); }
+    .ts-review-table select { font: inherit; width: 100%; }
+    .ts-review-table tr.ts-dup select { outline: 2px solid #c0392b; }
+    .ts-conf { display: inline-block; padding: 0.1em 0.5em; border-radius: 1em; font-size: 0.85em; font-weight: 600; color: #111; }
+    .ts-conf-certain { background: #2DCC70; }
+    .ts-conf-likely { background: #00BCD4; }
+    .ts-conf-possible { background: #F1C40F; }
+    .ts-conf-none { background: var(--hover); color: var(--muted); }
+    .ts-review-warn { color: #c0392b; margin-top: 0.6em; }
+    .ts-review-buttons { display: flex; justify-content: flex-end; gap: 0.6em; margin-top: 0.9em; }
+    .ts-review-buttons button { font: inherit; padding: 0.45em 1em; cursor: pointer; }
+    .ts-review-buttons .ts-primary { font-weight: 600; }
+    .ts-review-buttons button:disabled { opacity: 0.5; cursor: default; }
     .leaflet-bar { border-color: var(--border); }
     .leaflet-bar a, .leaflet-bar a:hover { background: var(--panel); color: var(--text); border-bottom-color: var(--border); }
     .leaflet-bar a:hover { background: var(--hover); }
