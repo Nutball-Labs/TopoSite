@@ -61,7 +61,7 @@ test('maps: create, rename, node list, view, pad and delete; the built-in map is
         view: { center: [1, 2], zoom: -1, layers: { neighbors: false, bogus: true } } })
     assert.equal(r.name, 'Workshop sketch')
     assert.deepEqual(r.nodes, { start: 'exclude', exceptions: [K(58)] }, 'exceptions de-duplicated')
-    assert.deepEqual(r.view, { center: [1, 2], zoom: -1, layers: { routes: true, backupRoutes: false, neighbors: false, nodes: true, health: true, battery: false } })
+    assert.deepEqual(r.view, { center: [1, 2], zoom: -1, layers: { routes: true, backupRoutes: false, neighbors: false, nodes: true, health: true, battery: false, names: true } })
     await assert.rejects(layout.updateMap(m.id, { nodes: { start: 'some' } }), { status: 400 })
 
     const padded = await layout.updateMap(m.id, { padTop: 100, expectHeightPx: 2000 })

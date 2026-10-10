@@ -49,18 +49,21 @@ const layers = {
     nodes: L.layerGroup().addTo(map),
     health: L.layerGroup().addTo(map),
     battery: L.layerGroup(),
+    // Not drawn itself: while it's on the map, node names show (see the layeradd handler)
+    names: L.layerGroup().addTo(map),
 }
 const LAYER_CHOICES = [
     ['Routes (last working)', layers.routes],
     ['Backup routes (next-to-last)', layers.nlwr],
     ['Neighbors (when known)', layers.neighbors],
     ['Nodes', layers.nodes],
+    ['Node names', layers.names],
     ['Mesh health', layers.health],
     ['Battery level', layers.battery],
 ]
 // view.layers keys saved with each map (lib/layout.js DEFAULT_LAYERS) → layer groups
-const VIEW_LAYERS = { routes: layers.routes, backupRoutes: layers.nlwr, neighbors: layers.neighbors, nodes: layers.nodes, health: layers.health, battery: layers.battery }
-const VIEW_DEFAULTS = { routes: true, backupRoutes: false, neighbors: true, nodes: true, health: true, battery: false }
+const VIEW_LAYERS = { routes: layers.routes, backupRoutes: layers.nlwr, neighbors: layers.neighbors, nodes: layers.nodes, health: layers.health, battery: layers.battery, names: layers.names }
+const VIEW_DEFAULTS = { routes: true, backupRoutes: false, neighbors: true, nodes: true, health: true, battery: false, names: true }
 addLayersButton()
 
 const state = {
@@ -81,7 +84,11 @@ map.on('moveend layeradd layerremove', (e) => {
 })
 addLegend()
 setupPane()
-map.on('zoomend', applyLabelZoom)
+// Node names layer: shows or hides every node's name label
+map.on('layeradd layerremove', (e) => {
+    if (e.layer === layers.names) map.getContainer().classList.toggle('ts-labels', e.type === 'layeradd')
+})
+map.getContainer().classList.add('ts-labels')
 
 // Theme changed (index.html): redraw so a map's dark/light background swaps
 window.addEventListener('ts-theme', () => {
@@ -197,8 +204,7 @@ async function draw() {
             else map.removeLayer(layer)
         }
         state.applyingView = false
-        state.labelZoom = map.getBoundsZoom(bounds, false, L.point(40, 40)) + 0.75
-        applyLabelZoom()
+        state.labelZoom = map.getBoundsZoom(bounds, false, L.point(40, 40)) + 0.75 // how far "jump to node" zooms in
     }
 
     // Positions: on a placed map, where shown nodes were put (the rest wait in the
@@ -619,10 +625,6 @@ function nodeTooltip(n, plan) {
     lines.push(`<span class="muted">${state.edit ? (plan ? 'Drag to move · right-click for options' : 'Right-click for options')
         : 'Right-click for options'}</span>`)
     return lines.join('<br>')
-}
-
-function applyLabelZoom() {
-    map.getContainer().classList.toggle('ts-labels', map.getZoom() >= state.labelZoom)
 }
 
 /** Background images go through api() so the login token is sent; shown via an object URL. */

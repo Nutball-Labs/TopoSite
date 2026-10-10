@@ -78,7 +78,8 @@ reported.
 ![Battery level tags](images/TopoSite-Routes-Battery_Levels.png)
 
 **Layers.** The *Layers…* button turns each kind of drawing on and off: last
-working routes, backup routes, neighbors, nodes, mesh health and battery levels.
+working routes, backup routes, neighbors, nodes, node names, mesh health and
+battery levels.
 In edit mode, the layers you leave on are saved with the map.
 
 ![The Layers menu](images/TopoSite-Layer_Menu.png)
@@ -179,7 +180,7 @@ its left edge to resize) has:
 - **Legend**: shows or hides the legend.
 
 On the map: **Layers…** (top right) toggles routes, backup routes, neighbors,
-nodes, mesh health and **battery level** (a percentage tag beside each battery
+nodes, **node names**, mesh health and **battery level** (a percentage tag beside each battery
 node — amber at 30 % or below, red at 15 % or below; it's the last level the
 device reported, and the hover box says when that was).
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Node names layer: show or hide node name labels (previously they appeared
+  only when zoomed in); saved per map
+
 ## 0.2.0 — 2026-10-10 (first public release)
 
 - Maps: several saved maps, each with its own background (light + optional
