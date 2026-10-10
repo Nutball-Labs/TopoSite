@@ -48,17 +48,21 @@ room needs a repeater.
 
 All taken on an example map in Z-Wave JS UI's dark theme.
 
-**Routes and node names.** Nodes placed on a floor plan, with each node's last
-working route back to the controller (the purple star, here named *wopr3*).
-Node shape shows power: hexagon for mains (repeats for the mesh), square for
-battery. Node colour is the hop count (cyan = direct, green = 2 hops, yellow =
-3), and line colour is the data rate (green 100 kbit/s, yellow 40 kbit/s, dark
-red 9.6 kbit/s), matching Z-Wave JS UI's own Network Graph. The two faint grey
+**Routes.** Nodes placed on a floor plan, with each node's last working route
+back to the controller (the purple star). Node shape shows power: hexagon for
+mains (repeats for the mesh), square for battery. Node colour is the hop count
+(cyan = direct, green = 2 hops, yellow = 3), and line colour is the data rate
+(green 100 kbit/s, yellow 40 kbit/s, dark red 9.6 kbit/s), matching Z-Wave JS
+UI's own Network Graph.
+
+![Routes on a floor plan](images/TopoSite-Routes.png)
+
+**Node names.** The *Node names* layer labels every node. The two faint grey
 dots with grey names (*Workshop Attic Lights*, *GeekCave_Lights*) are nodes
 hidden on this map that still repeat for nodes shown on it, so their routes
 stay traceable.
 
-![Routes and node names on a floor plan](images/TopoSite-Routes_Names.png)
+![Routes with node names](images/TopoSite-Routes_Names.png)
 
 **Routes and neighbors.** The *Neighbors* layer adds a thin grey line for every
 entry in the nodes' neighbor tables, so you can see which devices can hear each
