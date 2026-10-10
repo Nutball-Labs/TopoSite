@@ -169,8 +169,10 @@ async function draw() {
 
     // Background: plan image, or the placeholder grid
     layers.background.clearLayers()
-    if (plan?.image) {
-        const url = await planImageUrl(plan).catch((error) => {
+    if (plan && (plan.image || plan.imageDark)) {
+        // Dark version while the UI is dark (if there is one), otherwise the normal image
+        const variant = (isDarkTheme() && plan.imageDark) || !plan.image ? 'dark' : 'light'
+        const url = await planImageUrl(plan, variant).catch((error) => {
             panel.setStatus(explain(error, `Can't load image for ${esc(plan.name)}`))
             return null
         })
@@ -370,14 +372,22 @@ function applyLabelZoom() {
 }
 
 /** Plan images go through api() so the login token is sent; shown via an object URL. */
-async function planImageUrl(plan) {
-    const cached = state.imageUrls.get(plan.id)
-    if (cached?.image === plan.image) return cached.url
+async function planImageUrl(plan, variant = 'light') {
+    const key = `${plan.id}:${variant}`
+    const image = variant === 'dark' ? plan.imageDark : plan.image
+    const cached = state.imageUrls.get(key)
+    if (cached?.image === image) return cached.url
     if (cached) URL.revokeObjectURL(cached.url)
-    const res = await api(`plans/${plan.id}/image`, { raw: true, headers: { Accept: 'image/*' } })
+    const res = await api(`plans/${plan.id}/image?variant=${variant}`, { raw: true, headers: { Accept: 'image/*' } })
     const url = URL.createObjectURL(await res.blob())
-    state.imageUrls.set(plan.id, { image: plan.image, url })
+    state.imageUrls.set(key, { image, url })
     return url
+}
+
+/** Same rule as index.html's theme script: Z-Wave JS UI's choice, else the OS. */
+function isDarkTheme() {
+    const t = document.documentElement.dataset.theme
+    return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
 }
 
 // ---------------------------------------------------------------- drawing
@@ -521,23 +531,26 @@ async function uploadPlan(file) {
 }
 
 function forgetImage(planId) {
-    const cached = state.imageUrls.get(planId)
-    if (cached) URL.revokeObjectURL(cached.url)
-    state.imageUrls.delete(planId)
+    for (const variant of ['light', 'dark']) {
+        const cached = state.imageUrls.get(`${planId}:${variant}`)
+        if (cached) URL.revokeObjectURL(cached.url)
+        state.imageUrls.delete(`${planId}:${variant}`)
+    }
 }
 
 /** Set or replace the current plan's background; positions, drawing and scale stay. */
-async function setBackground(plan, file) {
+async function setBackground(plan, file, variant = 'light') {
     if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return panel.setStatus('Use a PNG, JPEG or WebP image.')
     if (file.size > 25 * 1024 * 1024) return panel.setStatus('That image is over 25 MB — export a smaller one.')
     panel.setStatus(`Uploading ${esc(file.name)}…`)
     try {
         const bitmap = await createImageBitmap(file)
-        const qs = new URLSearchParams({ imgWidthPx: bitmap.width, imgHeightPx: bitmap.height })
+        const qs = new URLSearchParams({ imgWidthPx: bitmap.width, imgHeightPx: bitmap.height, variant })
         bitmap.close()
         const updated = await api(`plans/${plan.id}/image?${qs}`, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
         forgetImage(plan.id)
-        panel.setStatus(`Background of ${esc(plan.name)} set to ${esc(file.name)}. Node positions and the drawing are unchanged.` +
+        const which = variant === 'dark' ? 'Dark-mode background' : 'Background'
+        panel.setStatus(`${which} of ${esc(plan.name)} set to ${esc(file.name)}. Node positions and the drawing are unchanged.` +
             (updated.stretched ? " Its proportions don't match the plan's, so it's stretched to fit." : ''))
     } catch (error) {
         panel.setStatus(explain(error, 'Background upload failed'))
@@ -659,7 +672,9 @@ function addPanel() {
                 </div>
                 <div class="ts-row">
                     <button type="button" id="ts-bg" title="Set or replace this plan's background image — node positions and the drawing stay">Background…</button>
-                    <button type="button" id="ts-bgdel" title="Remove this plan's background image (click twice) — node positions and the drawing stay">✕</button>
+                    <button type="button" id="ts-bgdark" title="Set or replace the version of this background shown in dark mode (same position as the normal one)">Dark…</button>
+                    <input type="file" id="ts-bgdarkfile" accept="image/png,image/jpeg,image/webp" hidden>
+                    <button type="button" id="ts-bgdel" title="Remove this plan's background images, normal and dark (click twice) — node positions and the drawing stay">✕</button>
                     <input type="file" id="ts-bgfile" accept="image/png,image/jpeg,image/webp" hidden>
                 </div>
                 <div class="ts-row"><button type="button" id="ts-draw" title="Draw rectangles, circles, lines and labels on this plan">Draw</button><button type="button" id="ts-refresh"
@@ -667,11 +682,18 @@ function addPanel() {
                 <div class="muted" id="ts-status"></div>`
             L.DomEvent.disableClickPropagation(div)
             L.DomEvent.disableScrollPropagation(div)
-            els = Object.fromEntries(['summary', 'plan', 'add', 'new', 'del', 'draw', 'file', 'bg', 'bgdel', 'bgfile', 'refresh', 'status']
+            els = Object.fromEntries(['summary', 'plan', 'add', 'new', 'del', 'draw', 'file', 'bg', 'bgdark', 'bgdarkfile', 'bgdel', 'bgfile', 'refresh', 'status']
                 .map((k) => [k, div.querySelector(`#ts-${k}`)]))
             els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
             els.add.addEventListener('click', () => els.file.click())
             els.bg.addEventListener('click', () => els.bgfile.click())
+            els.bgdark.addEventListener('click', () => els.bgdarkfile.click())
+            els.bgdarkfile.addEventListener('change', () => {
+                const file = els.bgdarkfile.files[0]
+                els.bgdarkfile.value = ''
+                const plan = currentPlan()
+                if (file && plan) setBackground(plan, file, 'dark')
+            })
             els.bgfile.addEventListener('change', () => {
                 const file = els.bgfile.files[0]
                 els.bgfile.value = ''
@@ -681,7 +703,7 @@ function addPanel() {
             let armedBg = null
             els.bgdel.addEventListener('click', () => {                 // two clicks, instead of confirm()
                 const plan = currentPlan()
-                if (!plan?.image) return
+                if (!plan?.image && !plan?.imageDark) return
                 if (armedBg !== plan.id) {
                     armedBg = plan.id
                     els.bgdel.textContent = 'Remove background?'
@@ -734,7 +756,9 @@ function addPanel() {
             els.del.hidden = plans.length === 0
             els.draw.hidden = plans.length === 0
             els.bg.hidden = plans.length === 0
-            els.bgdel.hidden = !plans.find((p) => p.id === selectedId)?.image
+            els.bgdark.hidden = plans.length === 0
+            const sel = plans.find((p) => p.id === selectedId)
+            els.bgdel.hidden = !(sel?.image || sel?.imageDark)
             // Each plan keeps its own node positions — show how many, so a plan with
             // none doesn't look like the positions were lost.
             const count = (id) => placements.filter((pl) => pl.planId === id).length

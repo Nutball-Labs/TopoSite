@@ -78,8 +78,8 @@ the request; the static page files are open (no data in them).
 | `PUT /toposite/api/plans/:id/shapes` | JSON `{shapes: [...]}` replaces the plan's drawing. Shapes (plan px): `rect {x,y,w,h}`, `circle {x,y,r}`, `line {points:[[x,y]…]}`, `label {x,y,text≤200}` |
 | `PATCH /toposite/api/plans/:id` | JSON, any of `{name, widthPx, heightPx, metersPerPixel, padTop, padLeft, expectWidthPx, expectHeightPx}`. Growing keeps all positions (top-left origin) and the background's `imageRect`. `padTop`/`padLeft` add room above/left and move the plan's placements, shapes and background with it; `expect*` refuses (409) unless the current size matches, so a pad is safe to retry |
 | `DELETE /toposite/api/plans/:id` | Deletes the plan, its image, placements and shapes |
-| `PUT /toposite/api/plans/:id/image?imgWidthPx&imgHeightPx` | Body = raw PNG/JPEG/WebP → set or replace the plan's background, keeping placements, shapes and scale. New: covers the whole plan; replacement: takes the old `imageRect`. Response has `stretched: true` if the aspect differs >2% |
-| `DELETE /toposite/api/plans/:id/image` | Remove the background (back to the grid); everything else stays |
+| `PUT /toposite/api/plans/:id/image?imgWidthPx&imgHeightPx[&variant=dark]` | Body = raw PNG/JPEG/WebP → set or replace the plan's background, keeping placements, shapes and scale. New: covers the whole plan; replacement: takes the old `imageRect`. Response has `stretched: true` if the aspect differs >2% |
+| `DELETE /toposite/api/plans/:id/image[?variant=dark]` | Remove the background (both variants; `?variant=dark` just the dark one); everything else stays. `variant=dark` images (plan field `imageDark`) share `imageRect` and are shown while the UI is dark |
 | `GET /toposite/api/plans/:id/image` | The plan image (the page fetches it with the token → object URL) |
 | `PUT /toposite/api/placements` | JSON `{deviceKey, planId, x, y}` (plan pixels, clamped) — one placement per device |
 | `DELETE /toposite/api/placements/:deviceKey` | Back to auto-layout |

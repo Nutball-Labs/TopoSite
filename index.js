@@ -66,7 +66,8 @@ export default class TopoSite {
         // Body (JSON): {shapes: [...]} — replaces every drawn shape on the plan
         api('put', '/plans/:id/shapes', (req) => this._layout().setShapes(req.params.id, req.body?.shapes))
 
-        // Body: raw image bytes. Query: imgWidthPx, imgHeightPx (decoded by the browser).
+        // Body: raw image bytes. Query: imgWidthPx, imgHeightPx (decoded by the browser),
+        // variant=light|dark (default light; dark is shown while the UI is in dark mode).
         // Sets or replaces the background; placements, shapes and scale stay.
         api('put', '/plans/:id/image', async (req) => {
             const bytes = await readBody(req, MAX_IMAGE_BYTES)
@@ -74,20 +75,23 @@ export default class TopoSite {
                 bytes,
                 imgWidthPx: Number(req.query.imgWidthPx),
                 imgHeightPx: Number(req.query.imgHeightPx),
+                variant: req.query.variant ?? 'light',
             })
         })
 
-        api('delete', '/plans/:id/image', (req) => this._layout().removeImage(req.params.id))
+        // ?variant=dark removes just the dark version; default removes both
+        api('delete', '/plans/:id/image', (req) => this._layout().removeImage(req.params.id, req.query.variant ?? 'all'))
 
         api('get', '/plans/:id/image', async (req, res) => {
             const layout = await this._layout().load()
             const plan = layout.plans.find((p) => p.id === req.params.id)
-            if (!plan || !plan.image) throw httpError(404, 'No such plan image')
-            res.type(plan.image.split('.').pop())
+            const field = req.query.variant === 'dark' ? 'imageDark' : 'image'
+            if (!plan || !plan[field]) throw httpError(404, 'No such plan image')
+            res.type(plan[field].split('.').pop())
             res.set('Cache-Control', 'private, max-age=3600')
             res.set('X-Content-Type-Options', 'nosniff')
             await new Promise((resolve, reject) => {
-                createReadStream(this._layout().imagePath(plan)).on('error', reject).on('end', resolve).pipe(res)
+                createReadStream(this._layout().imagePath(plan, field === 'imageDark' ? 'dark' : 'light')).on('error', reject).on('end', resolve).pipe(res)
             })
             return undefined // response already sent
         })

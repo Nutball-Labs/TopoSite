@@ -198,6 +198,36 @@ test('a background can be set on, replaced in and removed from an existing plan 
     assert.deepEqual(imageRectOf({ widthPx: 7, heightPx: 9 }), { x: 0, y: 0, w: 7, h: 9 }, 'legacy plans: whole plan')
 })
 
+test('a dark variant shares the light image\'s rect; either can be removed; delete cleans both', async () => {
+    const layout = await fresh()
+    const plan = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 5100 })
+    const light = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550 })
+    await layout.updatePlan(plan.id, { padTop: 50 })
+    const dark = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550, variant: 'dark' })
+    assert.match(dark.imageDark, /-dark-[0-9a-f]{6}\.png$/)
+    assert.equal(dark.image, light.image, 'light image untouched')
+    assert.deepEqual(dark.imageRect, { x: 0, y: 50, w: 3000, h: 5100 }, 'dark takes the shared rect')
+    assert.ok(existsSync(layout.imagePath(dark, 'dark')))
+
+    const noDark = await layout.removeImage(plan.id, 'dark')
+    assert.equal(noDark.imageDark, undefined)
+    assert.equal(noDark.image, light.image, 'removing dark keeps light')
+    assert.deepEqual(noDark.imageRect, { x: 0, y: 50, w: 3000, h: 5100 })
+
+    const again = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550, variant: 'dark' })
+    await layout.deletePlan(plan.id)
+    assert.ok(!existsSync(layout.imagePath(again, 'light')) && !existsSync(layout.imagePath(again, 'dark')), 'both files gone')
+
+    const p2 = await layout.addBlankPlan({ name: 'Dark only', widthPx: 100, heightPx: 100 })
+    const d2 = await layout.setImage(p2.id, { bytes: PNG, imgWidthPx: 100, imgHeightPx: 100, variant: 'dark' })
+    assert.equal(d2.image, null)
+    assert.deepEqual(d2.imageRect, { x: 0, y: 0, w: 100, h: 100 })
+    const cleared = await layout.removeImage(p2.id)
+    assert.equal(cleared.imageDark, undefined)
+    assert.equal(cleared.imageRect, undefined)
+    await assert.rejects(layout.setImage(p2.id, { bytes: PNG, imgWidthPx: 1, imgHeightPx: 1, variant: 'sepia' }), { status: 400 })
+})
+
 test("store dir: env overrides, then <cwd>/store, then two levels above the plugin", async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'toposite-store-'))
     const store = path.join(root, 'store')
