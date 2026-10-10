@@ -13,19 +13,32 @@ room needs a repeater.
 
 ---
 
-## Features (planned)
+## Features
 
-- **Z-Wave mesh on your floor plan** — node locations plus neighbor and route links
-- **Battery vs mains at a glance** — node icons show the power source, since mains-powered
-  nodes are always listening and repeat traffic for the mesh while battery nodes sleep and don't route
+- **Z-Wave mesh on your floor plan** — place nodes on any image (floor plan,
+  site plan, satellite screenshot) and see their routes and neighbor links
+- **Several maps** — each with its own background, node positions and node
+  list (for example: the whole house, just the workshop, only battery nodes)
+- **Built-in Network Graph** — a live automatic layout, controller in the middle
 - **Familiar symbols** — the same shapes and colors as Z-Wave JS UI's mesh view
-  (hexagon = mains, square = battery, star = controller; color = hop count; link color = data rate)
-- **Mesh health at a glance** — link styling flags weak, one-way or missing links and dead or isolated nodes
-- **Your own background** — upload a floor plan, site plan or any image
-- **Zoom from the sky into a room** — satellite view of the property, then the floor plan, then a
-  360° photo of a single room with devices placed where they really are and links shown leaving
-  through the walls toward their neighbors (see [ROADMAP.md](ROADMAP.md))
-- **Later:** Zigbee (Zigbee2MQTT) and IP device layers on the same map, each toggled independently
+  (hexagon = mains, square = battery, star = controller; color = hop count;
+  link color = data rate)
+- **Mesh health** — flags isolated nodes, nodes with few neighbors, weak route
+  hops, one-way neighbor entries and nodes running on their backup route
+- **Battery levels** — optional percentage tags with low-battery highlighting
+- **Hidden repeaters stay traceable** — a node hidden on a map still shows as a
+  small grey dot where it repeats for a node you're looking at
+- **Export / import** — move a map to another Z-Wave JS UI install; you review
+  how its devices match the new network
+- **Follows Z-Wave JS UI** — its light/dark theme and its login
+- **Works offline** — everything is served by the plugin, no CDN
+
+### Planned
+
+- **Zoom from the sky into a room** — satellite view of the property, then the
+  floor plan, then a 360° photo of a single room with devices placed where they
+  really are (see [ROADMAP.md](ROADMAP.md))
+- Zigbee (Zigbee2MQTT) and IP device layers on the same map
 
 ---
 
@@ -38,22 +51,39 @@ room needs a repeater.
 
 ## Installing
 
+TopoSite has no dependencies to install — clone it into Z-Wave JS UI's store
+so it's kept with Z-Wave JS UI's data:
+
 ```bash
-cd /path/to/zwave-js-ui/store/plugins     # Docker: the store volume
-git clone git@github.com:Nutball-Labs/TopoSite.git toposite
+cd /path/to/zwave-js-ui/store          # Docker: the host path of the store volume
+mkdir -p plugins && cd plugins
+git clone https://github.com/Nutball-Labs/TopoSite.git toposite
 ```
 
 Then in Z-Wave JS UI: **Settings → General → Plugins**, add the path to
-TopoSite's `index.js` as Z-Wave JS UI sees it (Docker:
-`/usr/src/app/store/plugins/toposite/index.js`), press **Enter** so it turns
-into a chip, and save. The path must end in `index.js` — a bare directory
-won't load.
+TopoSite's `index.js` as Z-Wave JS UI sees it, press **Enter** so it turns into
+a chip, and save:
+
+- Docker: `/usr/src/app/store/plugins/toposite/index.js`
+- Other installs: the full path to `toposite/index.js` under your store dir
+
+The path must end in `index.js` — a bare directory won't load. Z-Wave JS UI
+reloads plugins when settings are saved; restart it if TopoSite doesn't appear.
 
 To check it loaded, turn on **Settings → General → Log enabled** and look for
 `Successfully loaded plugin index.js` in Z-Wave JS UI's console output
-(`docker logs zwave-js-ui`).
+(`docker logs zwave-js-ui`). Then open
+`http://<zwave-js-ui-host>:8091/toposite/`.
 
-TopoSite's pages are served by Z-Wave JS UI under `/toposite/`.
+**Updating:** `git pull` in `store/plugins/toposite`, then restart Z-Wave JS UI.
+
+**Your maps** are saved in `store/toposite/` (`layout.json` plus `images/`),
+outside the plugin folder, so updating or reinstalling TopoSite never touches
+them and Z-Wave JS UI's store backups include them.
+
+**Removing:** delete the entry under Settings → General → Plugins, then the
+`store/plugins/toposite` folder (and `store/toposite/` if you don't want to keep
+your maps).
 
 > **Note:** TopoSite's data and changes are protected by Z-Wave JS UI's own
 > login when that login is turned on. With Z-Wave JS UI's auth off, TopoSite —
@@ -84,7 +114,8 @@ its left edge to resize) has:
 - **Map ▾**: **New…** (name; background — none, one you already have, or
   upload; include all or exclude all; optionally copy node positions from a
   map on the same background), **Rename…**, **Set as default**, **Delete**
-  (click twice), **Export…** (downloads the map as a `.toposite` file; the file name starts as the map's name and can be changed) and
+  (click twice), **Export…** (downloads the map as a `.toposite` file; the file
+  name starts as the map's name and can be changed) and
   **Import…** (loads one as a new map — you review how each device matches
   this network first; unmatched ones become dashed placeholders you can link
   later in edit mode).
@@ -99,17 +130,19 @@ its left edge to resize) has:
   running on its backup route, no route data yet). Click one to jump to it. On
   the map these show as rings around nodes, a "!" on weak route hops, and dotted
   lines for one-way neighbor entries. Mesh health is a layer: Layers… ▸ Mesh
-  health turns the markings and this list off and on together. Neighbor counts are
-  only judged after **Refresh neighbors** has filled most neighbor tables.
+  health turns the markings and this list off and on together. Neighbor counts
+  are only judged after **Refresh neighbors** has filled most neighbor tables.
+  The thresholds are first guesses and will be tuned.
 - **Legend**: shows or hides the legend.
 
 On the map: **Layers…** (top right) toggles routes, backup routes, neighbors,
 nodes, mesh health and **battery level** (a percentage tag beside each battery
 node — amber at 30 % or below, red at 15 % or below; it's the last level the
-device reported, and the hover box says when that was). Nodes hidden on a map aren't drawn, but if one repeats for a shown
-node's route it appears as a small grey dot so the route stays traceable
-(a dashed ring means its spot is approximate — it has no position on this map). Positions are saved in Z-Wave JS UI's store, so they're kept with
-its backups.
+device reported, and the hover box says when that was).
+
+Nodes hidden on a map aren't drawn, but if one repeats for a shown node's route
+it appears as a small grey dot so the route stays traceable (a dashed ring means
+its spot is approximate — it has no position on this map).
 
 If Z-Wave JS UI's login is turned on, TopoSite requires the same login: log in
 to Z-Wave JS UI in the same browser first.
@@ -118,11 +151,9 @@ to Z-Wave JS UI in the same browser first.
 
 ## Project Status
 
-**v0.1.0 — early development.** Map page at `/toposite/` with the built-in
-Network Graph and your own maps: backgrounds (light and dark), dragging nodes
-into place, export/import, neighbor refresh. Each map has its own node
-list, a default map opens on load, and changes happen in edit mode. Hidden repeaters on shown
-routes appear as ghosts. 
+**v0.2.0 — first public release.** Floor-plan maps and the Network Graph for
+Z-Wave, with mesh health, battery levels and export/import. Tested on Z-Wave
+JS UI 11.24.2 (Docker). Feedback and issue reports are welcome.
 
 ---
 
@@ -155,4 +186,4 @@ feature decisions, and real-world testing are entirely human-driven.
 GNU General Public License v3 — see [LICENSE](LICENSE).
 Copyright (C) 2026 Nutball Labs / Stephen Berg
 
-<!-- SN: 00001 -->
+<!-- SN: 00002 -->

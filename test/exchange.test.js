@@ -122,4 +122,4 @@ test('bad files are refused with a clear reason', () => {
     bad({ ...ok, nodes: [{ ref: 'a' }], placements: [{ ref: 'a', x: 'one', y: 1 }] })
 })
 
-// SN: 00001
+// SN: 00002

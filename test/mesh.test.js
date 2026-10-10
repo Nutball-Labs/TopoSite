@@ -94,4 +94,4 @@ test('getNodes skips virtual nodes and separates stale neighbor IDs', () => {
     assert.deepEqual(n2.unknownNeighbors, [6], 'node 6 was removed but is still in the controller table')
 })
 
-// SN: 00001
+// SN: 00002

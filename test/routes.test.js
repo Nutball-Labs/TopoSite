@@ -98,4 +98,4 @@ test('map page: bare base redirects to the trailing-slash URL, files come from p
     assert.equal(sent[0][1].dotfiles, 'deny')
 })
 
-// SN: 00001
+// SN: 00002

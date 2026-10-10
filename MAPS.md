@@ -361,4 +361,4 @@ on placements goes into **step 1**, so data from now on carries it.
 - **DSK:** not exposed by Z-Wave JS UI yet (upstream PR #4122). Matching relies
   on `deviceId` + name + location until it is.
 
-<!-- SN: 00001 -->
+<!-- SN: 00002 -->

@@ -18,7 +18,7 @@ Private GitHub repo at https://github.com/Nutball-Labs/TopoSite — all work on 
 
 "Topo" means **topology**, not topography.
 
-**Current version:** 0.1.0 (SN 00001) — `version` in `package.json`
+**Current version:** 0.2.0 (SN 00002) — `version` in `package.json`
 **Language:** JavaScript (ES modules), Node — runs inside Z-Wave JS UI (Node ≥ 20 — the `zwavejs/zwave-js-ui` 11.24.2 Docker image ships 22.20). Requires **Z-Wave JS UI ≥ 11.6.0** (first release that loads plugins with `import()`)
 **Tests:** `npm test` (Node's built-in `node:test`, no dependencies)
 
@@ -162,7 +162,7 @@ Every source file carries a serial number comment at the bottom of the file:
 `package.json` can't hold comments, so it carries no SN.
 
 **Rules:**
-- There is one project-wide **high-water mark** SN, currently `00001`
+- There is one project-wide **high-water mark** SN, currently `00002`
 - When files are modified in a build/fix session, bump their SN to the
   current high-water mark
 - When cutting a new release, increment the high-water mark by 1 and apply
@@ -332,4 +332,4 @@ See `ROADMAP.md` for detail.
 - **Phase 3 (satellite view):** Designed
 - **Later (Zigbee and IP layers):** Deferred
 
-<!-- SN: 00001 -->
+<!-- SN: 00002 -->

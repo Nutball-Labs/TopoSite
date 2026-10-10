@@ -76,4 +76,4 @@ Commit format: `"Fix/Add/Update description — TopoSite vX.Y.Z (SN NNNNN)"`
 Version 0.1.0 — plugin skeleton with `GET /toposite/api/nodes` and unit tests;
 not yet run inside a live Z-Wave JS UI. Map page is next.
 
-<!-- SN: 00001 -->
+<!-- SN: 00002 -->

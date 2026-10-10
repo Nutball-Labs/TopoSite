@@ -219,4 +219,4 @@ test('store dir: env overrides, then <cwd>/store, then two levels above the plug
     assert.equal(resolveStoreDir({}, '/nowhere', '/nowhere'), null)
 })
 
-// SN: 00001
+// SN: 00002

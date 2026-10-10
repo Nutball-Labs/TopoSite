@@ -142,4 +142,4 @@ test('battery tag levels and report ages', () => {
         ['just now', '20 min ago', '3 h ago', '3 days ago', 'never'])
 })
 
-// SN: 00001
+// SN: 00002

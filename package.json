@@ -1,13 +1,18 @@
 {
   "name": "toposite",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Z-Wave JS UI plugin: place Z-Wave nodes on a floor plan and show mesh links and health",
   "type": "module",
   "main": "index.js",
   "license": "GPL-3.0-or-later",
   "author": "Nutball Labs",
+  "homepage": "https://github.com/Nutball-Labs/TopoSite#readme",
   "repository": "github:Nutball-Labs/TopoSite",
+  "bugs": "https://github.com/Nutball-Labs/TopoSite/issues",
   "keywords": ["zwave-js-ui", "zwave-js-ui-plugin", "z-wave", "mesh", "floor-plan"],
+  "engines": {
+    "node": ">=20"
+  },
   "files": ["index.js", "lib/", "public/"],
   "scripts": {
     "test": "node --test test/"

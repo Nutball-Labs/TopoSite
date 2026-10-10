@@ -82,4 +82,4 @@ test("Z-Wave JS UI's trusted listener is recognized by port or unix path", async
     assert.equal((await authenticate({ headers: {}, socket: { localPort: 8099 } }, dir, env)).ok, true)
 })
 
-// SN: 00001
+// SN: 00002

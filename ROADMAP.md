@@ -105,4 +105,4 @@ panorama sphere (it renders as a great-circle arc).
 - Zigbee layer (Zigbee2MQTT network map) and IP layer (pfSense DHCP/ARP + manual),
   each toggled independently on the same map and in panoramas.
 
-<!-- SN: 00001 -->
+<!-- SN: 00002 -->
