@@ -11,6 +11,8 @@ Z-Wave JS UI's own mesh graph shows *how* nodes connect; TopoSite shows that
 same mesh laid over *where* the devices actually are, so you can see which
 room needs a repeater.
 
+![TopoSite showing a floor plan with Z-Wave routes and mesh-health markings](images/TopoSite-Mesh_Health.png)
+
 ---
 
 ## Features
@@ -39,6 +41,47 @@ room needs a repeater.
   floor plan, then a 360° photo of a single room with devices placed where they
   really are (see [ROADMAP.md](ROADMAP.md))
 - Zigbee (Zigbee2MQTT) and IP device layers on the same map
+
+---
+
+## Screenshots
+
+All taken on an example map in Z-Wave JS UI's dark theme.
+
+**Routes.** Nodes placed on a floor plan, with each node's last working route
+back to the controller (the purple star). Node shape shows power: hexagon for
+mains (repeats for the mesh), square for battery. Node colour is the hop count
+(cyan = direct, green = 2 hops, yellow = 3), and line colour is the data rate
+(green 100 kbit/s, yellow 40 kbit/s, dark red 9.6 kbit/s), matching Z-Wave JS
+UI's own Network Graph.
+
+![Routes on a floor plan](images/TopoSite-Routes.png)
+
+**Routes and neighbors.** The *Neighbors* layer adds a thin grey line for every
+entry in the nodes' neighbor tables, so you can see which devices can hear each
+other, not just the routes they use.
+
+![Routes plus neighbor lines](images/TopoSite-Routes-Neighbors.png)
+
+**Mesh health.** Amber rings mark nodes with a warning (here, weak signal on
+their route), "!" badges sit on the weak hops themselves, and dotted amber
+lines show one-way neighbor entries. The pane lists every flagged node; click
+one to jump to it.
+
+![Mesh health markings and the flagged-node list](images/TopoSite-Mesh_Health.png)
+
+**Battery levels.** The *Battery level* layer tags each battery node with the
+last level it reported. Tags turn amber at 30 % or below and red at 15 % or
+below (the 9 % node near the walk-in closet). Hover a node to see when it last
+reported.
+
+![Battery level tags](images/TopoSite-Routes-Battery_Levels.png)
+
+**Layers.** The *Layers…* button turns each kind of drawing on and off: last
+working routes, backup routes, neighbors, nodes, mesh health and battery levels.
+In edit mode, the layers you leave on are saved with the map.
+
+![The Layers menu](images/TopoSite-Layer_Menu.png)
 
 ---
 
