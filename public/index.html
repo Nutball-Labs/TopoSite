@@ -74,12 +74,21 @@
     .ts-legend .sw { width: 1em; height: 1em; border-radius: 0.15em; flex: none; }
     .ts-legend .ln { width: 1.5em; height: 0; border-top: 0.25em solid; flex: none; }
     .ts-legend h2 { font-size: 1em; margin: 0.5em 0 0.15em; }
-    /* Full-width button with centred text; toggles the legend (user, 2026-10-10) */
-    .ts-legend-toggle { display: block; width: 100%; text-align: center; font: 600 1.1em/1.2 system-ui, sans-serif;
+    /* Full-width buttons with centred text: Map, Background, Refresh neighbors, Legend (user, 2026-10-10) */
+    .ts-wide, .ts-legend-toggle { display: block; width: 100%; text-align: center; font: 600 1.1em/1.2 system-ui, sans-serif;
         color: var(--text); background: var(--hover); border: 1px solid var(--border); border-radius: 0.35em;
         padding: 0.5em; cursor: pointer; }
-    .ts-legend-toggle:hover { border-color: var(--muted); }
-    .ts-legend-toggle[aria-expanded="true"] { background: var(--panel); }
+    .ts-wide:hover:not(:disabled), .ts-legend-toggle:hover { border-color: var(--muted); }
+    .ts-wide[aria-expanded="true"], .ts-legend-toggle[aria-expanded="true"] { background: var(--panel); }
+    .ts-wide { margin-top: 0.5em; }
+    .ts-wide:disabled { cursor: default; opacity: 0.5; }
+    .ts-menu-items:not([hidden]) { display: flex; flex-direction: column; gap: 0.3em; margin: 0.35em 0 0 0.8em; }
+    .ts-menu-items > button { text-align: left; }
+    .ts-menu-items > button:disabled { opacity: 0.5; cursor: help; }
+    .ts-nameform:not([hidden]) { display: flex; gap: 0.3em; }
+    .ts-nameform input { font: inherit; flex: 1 1 6em; min-width: 0; }
+    .ts-field { display: flex; align-items: center; gap: 0.5em; margin-top: 0.5em; }
+    .ts-field select { font: inherit; flex: 1 1 auto; min-width: 0; }
     #ts-legend-body { margin-top: 0.5em; }
 
     .ts-node { overflow: visible; }

@@ -63,21 +63,25 @@ TopoSite's pages are served by Z-Wave JS UI under `/toposite/`.
 
 ## Usage
 
-Open `http://<zwave-js-ui-host>:8091/toposite/`.
+Open `http://<zwave-js-ui-host>:8091/toposite/`. The pane on the right (drag
+its left edge to resize) has:
 
-- **Add image…** uploads a background: a floor plan, site plan or a satellite
-  screenshot (PNG, JPEG or WebP, up to 25 MB). Several images can be added and
-  switched with the drop-down.
-- **Background…** sets or replaces the current plan's background image without
-  touching node positions; **Dark…** adds a version shown while Z-Wave JS UI
-  is in dark mode; **✕** removes them. Use any image you like — a floor plan
-  export, a drawing, a satellite screenshot.
-- **Drag a node** onto the image to place it; positions are saved in Z-Wave JS
-  UI's store (`store/toposite/`), so they're kept with its backups.
-  Right-click a placed node to send it back to the automatic layout (faded).
-- **Refresh neighbors** asks Z-Wave JS UI to re-read every node's neighbor list
-  (the radio pauses for a few seconds; once a minute at most).
-- The check boxes at top right toggle routes, backup routes, neighbor lines and nodes.
+- **Map** (drop-down): the map you're looking at, with how many nodes are
+  placed on each.
+- **Map ▾**: **New…**, **Rename…**, **Delete** (click twice). Export and
+  Import are listed but not built yet.
+- **Background ▾**: **Set image…** (any PNG, JPEG or WebP up to 25 MB — a floor
+  plan export, a drawing, a satellite screenshot), **Set dark-mode image…**
+  (shown while Z-Wave JS UI is in dark mode), **Unset**. Node positions stay
+  when the background changes. A new map's first image sets its size.
+- **Refresh neighbors**: asks Z-Wave JS UI to re-read every node's neighbor
+  list (the radio pauses for a few seconds; once a minute at most).
+- **Legend**: shows or hides the legend.
+
+On the map: **drag a node** onto the background to place it (saved in Z-Wave JS
+UI's store, so it's kept with its backups); **right-click** a node for its
+menu (e.g. Unplace); **Layers…** (top right) toggles routes, backup routes,
+neighbors and nodes.
 
 If Z-Wave JS UI's login is turned on, TopoSite requires the same login: log in
 to Z-Wave JS UI in the same browser first.

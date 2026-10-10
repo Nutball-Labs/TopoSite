@@ -359,27 +359,31 @@ function isDarkTheme() {
 
 // ---------------------------------------------------------------- plans
 
-async function uploadPlan(file) {
-    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
-        return panel.setStatus('Use a PNG, JPEG or WebP image.')
-    }
-    if (file.size > 25 * 1024 * 1024) {
-        return panel.setStatus('That image is over 25 MB — export a smaller one.')
-    }
-    panel.setStatus(`Uploading ${esc(file.name)}…`)
+/** Map ▸ New…: an empty map (grid); its first background image sets its size. */
+async function newMap(name) {
     try {
-        const bitmap = await createImageBitmap(file)
-        const { width, height } = bitmap
-        bitmap.close()
-        const name = file.name.replace(/\.[^.]+$/, '')
-        const qs = new URLSearchParams({ name, widthPx: width, heightPx: height })
-        const plan = await api(`plans?${qs}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file })
+        const plan = await api('plans/blank', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, widthPx: 3000, heightPx: 2000 }),
+        })
         selectPlan(plan.id)
-        panel.setStatus(`Added ${esc(plan.name)} (${width} × ${height}) as a new plan with its own node positions — ` +
-            'positions on your other plans are unchanged (switch with the drop-down).')
+        panel.setStatus(`Created map ${esc(plan.name)}. Give it a picture with Background ▸ Set image…, then drag nodes onto it.`)
     } catch (error) {
-        panel.setStatus(explain(error, 'Upload failed'))
+        panel.setStatus(explain(error, "Couldn't create the map"))
     }
+}
+
+/** Map ▸ Rename… */
+async function renameMap(plan, name) {
+    try {
+        await api(`plans/${plan.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+        panel.setStatus(`Renamed to ${esc(name)}.`)
+    } catch (error) {
+        panel.setStatus(explain(error, "Couldn't rename the map"))
+    }
+    lastLayoutJSON = ''
+    reload()
 }
 
 function forgetImage(planId) {
@@ -510,74 +514,93 @@ function storedToken() {
 function addPanel() {
     let els
     let armedDelete = null
+    let armedBg = null
+    let nameMode = null // 'new' | 'rename' while the name box is open
     const Panel = L.Control.extend({
         onAdd() {
             const div = L.DomUtil.create('div', 'ts-panel')
+            const notBuilt = 'Not built yet — planned as step 6 in MAPS.md (one map per file, reviewed node matching)'
             div.innerHTML = `<h1>TopoSite</h1>
                 <div class="muted" id="ts-summary">Loading…</div>
-                <div class="ts-row">
-                    <select id="ts-plan" title="Background image"></select>
-                    <button type="button" id="ts-add" title="Upload a PNG, JPEG or WebP image as a new plan">Add image…</button>
-                    <button type="button" id="ts-del" title="Delete this background and every node position on it">Delete</button>
-                    <input type="file" id="ts-file" accept="image/png,image/jpeg,image/webp" hidden>
+                <label class="ts-field"><span>Map</span><select id="ts-plan" title="The map you're looking at"></select></label>
+
+                <button type="button" class="ts-wide" id="ts-mapmenu" aria-expanded="false" aria-controls="ts-mapitems">Map ▾</button>
+                <div class="ts-menu-items" id="ts-mapitems" hidden>
+                    <button type="button" id="ts-new" title="Create a new, empty map">New…</button>
+                    <button type="button" id="ts-rename" title="Rename the current map">Rename…</button>
+                    <button type="button" id="ts-del" title="Delete the current map, its background and its node positions (click twice)">Delete</button>
+                    <button type="button" id="ts-export" disabled title="${notBuilt}">Export</button>
+                    <button type="button" id="ts-import" disabled title="${notBuilt}">Import</button>
+                    <form class="ts-nameform" id="ts-nameform" hidden>
+                        <input id="ts-name" maxlength="100" autocomplete="off" aria-label="Map name">
+                        <button type="submit" id="ts-nameok">OK</button>
+                        <button type="button" id="ts-namecancel">Cancel</button>
+                    </form>
                 </div>
-                <div class="ts-row">
-                    <button type="button" id="ts-bg" title="Set or replace this plan's background image — node positions stay">Background…</button>
-                    <button type="button" id="ts-bgdark" title="Set or replace the version of this background shown in dark mode (same position as the normal one)">Dark…</button>
-                    <input type="file" id="ts-bgdarkfile" accept="image/png,image/jpeg,image/webp" hidden>
-                    <button type="button" id="ts-bgdel" title="Remove this plan's background images, normal and dark (click twice) — node positions stay">✕</button>
+
+                <button type="button" class="ts-wide" id="ts-bgmenu" aria-expanded="false" aria-controls="ts-bgitems"
+                    title="Set or unset the current map's background image">Background ▾</button>
+                <div class="ts-menu-items" id="ts-bgitems" hidden>
+                    <button type="button" id="ts-bg" title="Set or replace the current map's background image — node positions stay">Set image…</button>
+                    <button type="button" id="ts-bgdark" title="Set or replace the version shown while Z-Wave JS UI is in dark mode">Set dark-mode image…</button>
+                    <button type="button" id="ts-bgdel" title="Remove the background images, normal and dark (click twice) — node positions stay">Unset</button>
                     <input type="file" id="ts-bgfile" accept="image/png,image/jpeg,image/webp" hidden>
+                    <input type="file" id="ts-bgdarkfile" accept="image/png,image/jpeg,image/webp" hidden>
                 </div>
-                <div class="ts-row"><button type="button" id="ts-refresh"
-                    title="Asks Z-Wave JS UI to re-read every node's neighbor list from the controller. The radio pauses for a few seconds; allowed once a minute.">Refresh neighbors</button></div>
+
+                <button type="button" class="ts-wide" id="ts-refresh"
+                    title="Asks Z-Wave JS UI to re-read every node's neighbor list from the controller. The radio pauses for a few seconds; allowed once a minute.">Refresh neighbors</button>
                 <div class="muted" id="ts-status"></div>`
             L.DomEvent.disableClickPropagation(div)
             L.DomEvent.disableScrollPropagation(div)
-            els = Object.fromEntries(['summary', 'plan', 'add', 'del', 'file', 'bg', 'bgdark', 'bgdarkfile', 'bgdel', 'bgfile', 'refresh', 'status']
-                .map((k) => [k, div.querySelector(`#ts-${k}`)]))
-            els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
-            els.add.addEventListener('click', () => els.file.click())
-            els.bg.addEventListener('click', () => els.bgfile.click())
-            els.bgdark.addEventListener('click', () => els.bgdarkfile.click())
-            els.bgdarkfile.addEventListener('change', () => {
-                const file = els.bgdarkfile.files[0]
-                els.bgdarkfile.value = ''
-                const plan = currentPlan()
-                if (file && plan) setBackground(plan, file, 'dark')
+            els = Object.fromEntries(['summary', 'plan', 'mapmenu', 'mapitems', 'new', 'rename', 'del', 'export', 'import',
+                'nameform', 'name', 'nameok', 'namecancel', 'bgmenu', 'bgitems', 'bg', 'bgdark', 'bgdel', 'bgfile', 'bgdarkfile',
+                'refresh', 'status'].map((k) => [k, div.querySelector(`#ts-${k}`)]))
+
+            // Menu buttons open and close their item lists
+            const menu = (btn, items, label) => btn.addEventListener('click', () => {
+                items.hidden = !items.hidden
+                btn.setAttribute('aria-expanded', !items.hidden)
+                btn.textContent = `${label} ${items.hidden ? '▾' : '▴'}`
+                if (items.hidden) closeName()
             })
-            els.bgfile.addEventListener('change', () => {
-                const file = els.bgfile.files[0]
-                els.bgfile.value = ''
-                const plan = currentPlan()
-                if (file && plan) setBackground(plan, file)
-            })
-            let armedBg = null
-            els.bgdel.addEventListener('click', () => {                 // two clicks, instead of confirm()
-                const plan = currentPlan()
-                if (!plan?.image && !plan?.imageDark) return
-                if (armedBg !== plan.id) {
-                    armedBg = plan.id
-                    els.bgdel.textContent = 'Remove background?'
-                    setTimeout(() => { armedBg = null; els.bgdel.textContent = '✕' }, 4000)
-                    return
-                }
-                armedBg = null
-                els.bgdel.textContent = '✕'
-                removeBackground(plan)
-            })
-            els.file.addEventListener('change', () => {
-                const file = els.file.files[0]
-                els.file.value = ''
-                if (file) uploadPlan(file)
-            })
+            menu(els.mapmenu, els.mapitems, 'Map')
+            menu(els.bgmenu, els.bgitems, 'Background')
+
             els.plan.addEventListener('change', () => selectPlan(els.plan.value))
+
+            // New / Rename share one name box in the menu (no pop-up dialogs)
+            const openName = (mode) => {
+                nameMode = mode
+                els.nameform.hidden = false
+                els.name.value = mode === 'rename' ? (currentPlan()?.name ?? '') : ''
+                els.name.placeholder = mode === 'new' ? 'Name of the new map' : 'New name'
+                els.nameok.textContent = mode === 'new' ? 'Create' : 'Rename'
+                els.name.focus()
+                els.name.select()
+            }
+            const closeName = () => { nameMode = null; els.nameform.hidden = true }
+            els.new.addEventListener('click', () => openName('new'))
+            els.rename.addEventListener('click', () => { if (currentPlan()) openName('rename') })
+            els.namecancel.addEventListener('click', closeName)
+            els.name.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeName() })
+            els.nameform.addEventListener('submit', (e) => {
+                e.preventDefault()
+                const name = els.name.value.trim()
+                if (!name) return els.name.focus()
+                const mode = nameMode
+                closeName()
+                if (mode === 'new') newMap(name)
+                else if (mode === 'rename' && currentPlan()) renameMap(currentPlan(), name)
+            })
+
             // Two clicks to delete, instead of a confirm() dialog
             els.del.addEventListener('click', () => {
                 const plan = currentPlan()
                 if (!plan) return
                 if (armedDelete !== plan.id) {
                     armedDelete = plan.id
-                    els.del.textContent = 'Really delete?'
+                    els.del.textContent = `Really delete "${plan.name}"?`
                     setTimeout(() => { armedDelete = null; els.del.textContent = 'Delete' }, 4000)
                     return
                 }
@@ -585,6 +608,33 @@ function addPanel() {
                 els.del.textContent = 'Delete'
                 deletePlan(plan)
             })
+
+            // Background: set (normal / dark-mode) or unset
+            els.bg.addEventListener('click', () => els.bgfile.click())
+            els.bgdark.addEventListener('click', () => els.bgdarkfile.click())
+            for (const [input, variant] of [[els.bgfile, 'light'], [els.bgdarkfile, 'dark']]) {
+                input.addEventListener('change', () => {
+                    const file = input.files[0]
+                    input.value = ''
+                    const plan = currentPlan()
+                    if (file && plan) setBackground(plan, file, variant)
+                })
+            }
+            els.bgdel.addEventListener('click', () => {
+                const plan = currentPlan()
+                if (!plan?.image && !plan?.imageDark) return
+                if (armedBg !== plan.id) {
+                    armedBg = plan.id
+                    els.bgdel.textContent = 'Really unset the background?'
+                    setTimeout(() => { armedBg = null; els.bgdel.textContent = 'Unset' }, 4000)
+                    return
+                }
+                armedBg = null
+                els.bgdel.textContent = 'Unset'
+                removeBackground(plan)
+            })
+
+            els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
             return div
         },
     })
@@ -597,17 +647,18 @@ function addPanel() {
             els.summary.textContent = `${nodes.length} nodes · ${dead} dead/failed · neighbors known for ${withNb}`
         },
         setPlans(plans, selectedId, placements = []) {
-            els.plan.hidden = plans.length === 0
-            els.del.hidden = plans.length === 0
-            els.bg.hidden = plans.length === 0
-            els.bgdark.hidden = plans.length === 0
             const sel = plans.find((p) => p.id === selectedId)
-            els.bgdel.hidden = !(sel?.image || sel?.imageDark)
-            // Each plan keeps its own node positions — show how many, so a plan with
+            els.rename.disabled = !sel
+            els.del.disabled = !sel
+            els.bgmenu.disabled = !sel
+            els.bgdel.disabled = !(sel?.image || sel?.imageDark)
+            els.plan.disabled = plans.length === 0
+            // Each map keeps its own node positions — show how many, so a map with
             // none doesn't look like the positions were lost.
             const count = (id) => placements.filter((pl) => pl.planId === id).length
-            els.plan.innerHTML = plans.map((p) =>
-                `<option value="${esc(p.id)}">${esc(p.name)} (${count(p.id)} placed)</option>`).join('')
+            els.plan.innerHTML = plans.length
+                ? plans.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${count(p.id)} placed)</option>`).join('')
+                : '<option>No maps yet — Map ▸ New…</option>'
             if (selectedId) els.plan.value = selectedId
         },
     }

@@ -80,7 +80,14 @@ The layout should feel like an app, not a debug page.
   and the legend, and in future the sections below.
 - **Layers…** button on the map's top right (Google Maps style): opens toggles
   for routes, backup routes, neighbors and nodes.
-- **Pane sections:**
+- **Pane controls (user, 2026-10-10), as built today:**
+  - **Map** drop-down: the current map.
+  - **Map ▾**: New… · Rename… · Delete (two clicks) · Export · Import.
+    Export and Import are greyed out until step 6.
+  - **Background ▾**: Set image… · Set dark-mode image… · Unset (two clicks).
+  - **Refresh neighbors**.
+  - **Legend**: toggle, starts hidden.
+- **Pane sections (later steps):**
   - **Maps**: list, **New map…**, rename, **Set as default**, delete (two
     clicks).
   - **Nodes** (edit mode): every node with a show/hide checkbox for this map.

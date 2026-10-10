@@ -164,9 +164,9 @@ test('a background can be set on, replaced in and removed from an existing plan 
 test('a dark variant shares the light image\'s rect; either can be removed; delete cleans both', async () => {
     const layout = await fresh()
     const plan = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 5100 })
-    const light = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550 })
+    const light = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 3000, imgHeightPx: 5100 })
     await layout.updatePlan(plan.id, { padTop: 50 })
-    const dark = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550, variant: 'dark' })
+    const dark = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 3000, imgHeightPx: 5100, variant: 'dark' })
     assert.match(dark.imageDark, /-dark-[0-9a-f]{6}\.png$/)
     assert.equal(dark.image, light.image, 'light image untouched')
     assert.deepEqual(dark.imageRect, { x: 0, y: 50, w: 3000, h: 5100 }, 'dark takes the shared rect')
@@ -177,7 +177,7 @@ test('a dark variant shares the light image\'s rect; either can be removed; dele
     assert.equal(noDark.image, light.image, 'removing dark keeps light')
     assert.deepEqual(noDark.imageRect, { x: 0, y: 50, w: 3000, h: 5100 })
 
-    const again = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550, variant: 'dark' })
+    const again = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 3000, imgHeightPx: 5100, variant: 'dark' })
     await layout.deletePlan(plan.id)
     assert.ok(!existsSync(layout.imagePath(again, 'light')) && !existsSync(layout.imagePath(again, 'dark')), 'both files gone')
 
@@ -189,6 +189,21 @@ test('a dark variant shares the light image\'s rect; either can be removed; dele
     assert.equal(cleared.imageDark, undefined)
     assert.equal(cleared.imageRect, undefined)
     await assert.rejects(layout.setImage(p2.id, { bytes: PNG, imgWidthPx: 1, imgHeightPx: 1, variant: 'sepia' }), { status: 400 })
+})
+
+test("a map's first image sets its size while nothing is placed; otherwise the size stays", async () => {
+    const layout = await fresh()
+    const empty = await layout.addBlankPlan({ name: 'New map', widthPx: 3000, heightPx: 2000 })
+    const set = await layout.setImage(empty.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550 })
+    assert.deepEqual([set.widthPx, set.heightPx], [1500, 2550])
+    assert.deepEqual(set.imageRect, { x: 0, y: 0, w: 1500, h: 2550 })
+    assert.equal(set.stretched, false)
+
+    const used = await layout.addBlankPlan({ name: 'Has nodes', widthPx: 3000, heightPx: 2000 })
+    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: used.id, x: 10, y: 10 })
+    const kept = await layout.setImage(used.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550 })
+    assert.deepEqual([kept.widthPx, kept.heightPx], [3000, 2000], 'placed nodes keep their coordinates')
+    assert.equal(kept.stretched, true)
 })
 
 test("store dir: env overrides, then <cwd>/store, then two levels above the plugin", async () => {
