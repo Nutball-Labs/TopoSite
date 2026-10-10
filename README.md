@@ -67,7 +67,8 @@ Open `http://<zwave-js-ui-host>:8091/toposite/`. The pane on the right (drag
 its left edge to resize) has:
 
 - **Map** (drop-down): the map you're looking at, with how many nodes are
-  placed on each.
+  placed on each. **Network Graph** is built in and lays nodes out
+  automatically; your own maps keep their own background and node positions.
 - **Map ▾**: **New…**, **Rename…**, **Delete** (click twice), **Export**
   (downloads the map as a `.toposite` file) and **Import…** (loads one as a new
   map — you review how each device matches this network first; unmatched ones
@@ -92,9 +93,10 @@ to Z-Wave JS UI in the same browser first.
 
 ## Project Status
 
-**v0.1.0 — early development.** Node API and a first read-only map page at
-`/toposite/` (temporary auto-layout, placeholder background, "Refresh neighbors"
-button). Floor-plan upload and dragging nodes into place come next.
+**v0.1.0 — early development.** Map page at `/toposite/` with the built-in
+Network Graph and your own maps: backgrounds (light and dark), dragging nodes
+into place, export/import, neighbor refresh. Next: per-map node lists, a
+default map, and an edit mode (see `MAPS.md`).
 
 ---
 

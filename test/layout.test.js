@@ -1,254 +1,215 @@
-// layout.test.js — Plans, placements and image checks (run: npm test)
+// layout.test.js — Maps, backgrounds, positions and the v1 → v2 migration (run: npm test)
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { existsSync, readdirSync } from 'node:fs'
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { Layout, sniffImage, imageRectOf, cleanSeen } from '../lib/layout.js'
+import { Layout, sniffImage, imageSize, cleanSeen, migrateV1, GRAPH_ID } from '../lib/layout.js'
 import { resolveStoreDir } from '../lib/store.js'
-import { mkdir } from 'node:fs/promises'
 
-export const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
+// a real 1×1 PNG (header readable) and a header-only PNG (size unknown)
+const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0])
 const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP')])
 const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
 
 const fresh = async () => new Layout(await mkdtemp(path.join(tmpdir(), 'toposite-layout-')))
+const K = (n) => `zwave:cdfbb3c7:${n}`
+const images = (layout) => (existsSync(layout.imagesDir) ? readdirSync(layout.imagesDir).sort() : [])
 
-test('only PNG, JPEG and WebP are recognized — never SVG', () => {
+test('only PNG, JPEG and WebP are recognized — never SVG; sizes are read from the header', () => {
     assert.equal(sniffImage(PNG).ext, 'png')
     assert.equal(sniffImage(JPEG).ext, 'jpg')
     assert.equal(sniffImage(WEBP).ext, 'webp')
     assert.equal(sniffImage(SVG), null)
-    assert.equal(sniffImage(Buffer.alloc(0)), null)
+    assert.deepEqual(imageSize(PNG1), { w: 1, h: 1 })
+    assert.equal(imageSize(PNG), null, 'header too short')
+    // minimal JPEG: SOI, SOF0 with 40×30
+    const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x1e, 0x00, 0x28, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    assert.deepEqual(imageSize(jpg), { w: 40, h: 30 })
 })
 
-test('empty store loads an empty layout', async () => {
+test('an empty store has the built-in Network Graph map as the default', async () => {
     const layout = await fresh()
-    assert.deepEqual(await layout.load(), { version: 1, plans: [], placements: [] })
+    const l = await layout.load()
+    assert.equal(l.version, 2)
+    assert.deepEqual(l.maps.map((m) => [m.id, m.layout, m.builtin]), [[GRAPH_ID, 'graph', true]])
+    assert.equal(l.settings.defaultMapId, GRAPH_ID)
+    assert.deepEqual(l.backgrounds, [])
 })
 
-test('adding a plan writes the image and layout.json', async () => {
+test('a version-1 file is migrated once, with a backup, positions nested and backgrounds split out', async () => {
     const layout = await fresh()
-    const plan = await layout.addPlan({ name: 'Google Earth', widthPx: 1920, heightPx: 1080, bytes: PNG })
-    assert.match(plan.id, /^[0-9a-f]{8}$/)
-    assert.equal(plan.image, `${plan.id}.png`)
-    assert.ok(existsSync(layout.imagePath(plan)))
-    const saved = JSON.parse(await readFile(layout.file, 'utf8'))
-    assert.deepEqual(saved.plans, [plan])
+    const v1 = {
+        version: 1,
+        plans: [
+            { id: 'p1', name: 'House', image: 'p1-aaa.png', imageDark: 'p1-dark-bbb.png', imageRect: { x: 0, y: 2100, w: 3000, h: 3000 },
+                widthPx: 3000, heightPx: 5100, metersPerPixel: 0.006096, elevationM: 0 },
+            { id: 'p2', name: 'Shop', image: null, widthPx: 1000, heightPx: 800, metersPerPixel: null },
+        ],
+        placements: [
+            { deviceKey: K(2), planId: 'p1', x: 500, y: 3000, seen: { name: 'Lights' } },
+            { id: 'ph-1', planId: 'p1', deviceKey: null, x: 9, y: 9, placeholder: { name: 'Flood' } },
+            { deviceKey: K(2), planId: 'p2', x: 50, y: 60 },
+        ],
+        shapes: [{ id: 's', planId: 'p1', type: 'rect' }],
+    }
+    await mkdir(layout.dir, { recursive: true })
+    await writeFile(layout.file, JSON.stringify(v1))
+
+    const l = await layout.load()
+    assert.equal(l.version, 2)
+    assert.equal(l.shapes, undefined, 'legacy shapes dropped')
+    assert.equal(l.settings.defaultMapId, 'p1', 'House becomes the default map')
+    const house = l.maps.find((m) => m.id === 'p1')
+    assert.deepEqual([house.layout, house.widthPx, house.heightPx, house.metersPerPixel], ['placed', 3000, 5100, 0.006096])
+    assert.deepEqual(house.background, { id: 'bg-p1', imageRect: { x: 0, y: 2100, w: 3000, h: 3000 } })
+    assert.deepEqual(house.placements, [
+        { deviceKey: K(2), x: 500, y: 3000, seen: { name: 'Lights' } },
+        { id: 'ph-1', deviceKey: null, x: 9, y: 9, placeholder: { name: 'Flood' } },
+    ], 'positions nested, planId dropped, placeholder kept')
+    assert.deepEqual(house.nodes, { start: 'include', exceptions: [] })
+    const bg = l.backgrounds.find((b) => b.id === 'bg-p1')
+    assert.deepEqual([bg.image, bg.imageDark, bg.widthPx, bg.heightPx], ['p1-aaa.png', 'p1-dark-bbb.png', 3000, 3000])
+    const shop = l.maps.find((m) => m.id === 'p2')
+    assert.equal(shop.background, null)
+    assert.deepEqual(shop.placements, [{ deviceKey: K(2), x: 50, y: 60 }])
+    assert.ok(l.maps.some((m) => m.id === GRAPH_ID && m.layout === 'graph'))
+
+    assert.deepEqual(JSON.parse(await readFile(path.join(layout.dir, 'layout.v1.json'), 'utf8')), v1, 'original kept')
+    assert.equal(JSON.parse(await readFile(layout.file, 'utf8')).version, 2, 'written back as v2')
+    assert.deepEqual(migrateV1({ plans: [] }).settings.defaultMapId, GRAPH_ID, 'no House → Network Graph is the default')
 })
 
-test('bad uploads are refused with the right status', async () => {
+test('maps: create, rename, node list, view, pad and delete; the built-in map is protected', async () => {
     const layout = await fresh()
-    await assert.rejects(layout.addPlan({ name: 'x', widthPx: 10, heightPx: 10, bytes: SVG }), { status: 415 })
-    await assert.rejects(layout.addPlan({ name: 'x', widthPx: 0, heightPx: 10, bytes: PNG }), { status: 400 })
-    await assert.rejects(layout.addPlan({ name: 'x', widthPx: 1.5, heightPx: 10, bytes: PNG }), { status: 400 })
-    await assert.rejects(layout.addPlan({ name: 'x', widthPx: NaN, heightPx: 10, bytes: PNG }), { status: 400 })
+    const m = await layout.addMap({ name: 'Workshop' })
+    assert.deepEqual([m.layout, m.widthPx, m.heightPx, m.background], ['placed', 3000, 2000, null])
+    await layout.setPlacement(m.id, { deviceKey: K(58), x: 100, y: 200 })
+
+    const r = await layout.updateMap(m.id, { name: 'Workshop sketch', nodes: { start: 'exclude', exceptions: [K(58), K(58)] },
+        view: { center: [1, 2], zoom: -1, layers: { neighbors: false, bogus: true } } })
+    assert.equal(r.name, 'Workshop sketch')
+    assert.deepEqual(r.nodes, { start: 'exclude', exceptions: [K(58)] }, 'exceptions de-duplicated')
+    assert.deepEqual(r.view, { center: [1, 2], zoom: -1, layers: { routes: true, backupRoutes: false, neighbors: false, nodes: true } })
+    await assert.rejects(layout.updateMap(m.id, { nodes: { start: 'some' } }), { status: 400 })
+
+    const padded = await layout.updateMap(m.id, { padTop: 100, expectHeightPx: 2000 })
+    assert.equal(padded.heightPx, 2100)
+    assert.deepEqual([padded.placements[0].x, padded.placements[0].y], [100, 300])
+    await assert.rejects(layout.updateMap(m.id, { padTop: 100, expectHeightPx: 2000 }), { status: 409 }, 'a retried pad is refused')
+
+    await assert.rejects(layout.updateMap(GRAPH_ID, { name: 'x' }), { status: 409 })
+    await assert.rejects(layout.updateMap(GRAPH_ID, { padTop: 5 }), { status: 409 }, 'graph map has no canvas')
+    assert.deepEqual((await layout.updateMap(GRAPH_ID, { nodes: { start: 'exclude', exceptions: [] } })).nodes.start, 'exclude', 'but its node list saves')
+    await assert.rejects(layout.deleteMap(GRAPH_ID), { status: 409 })
+    await assert.rejects(layout.setPlacement(GRAPH_ID, { deviceKey: K(1), x: 1, y: 1 }), { status: 409 })
+
+    await layout.updateSettings({ defaultMapId: m.id })
+    await assert.rejects(layout.updateSettings({ defaultMapId: 'nope' }), { status: 404 })
+    await layout.deleteMap(m.id)
+    const l = await layout.load()
+    assert.ok(!l.maps.some((x) => x.id === m.id))
+    assert.equal(l.settings.defaultMapId, GRAPH_ID, 'deleting the default falls back to the Network Graph')
 })
 
-test('placements: one per device, clamped to the plan, removed with their plan', async () => {
+test('positions are per map: placing or unplacing on one map leaves the others alone', async () => {
     const layout = await fresh()
-    const plan = await layout.addPlan({ name: 'p', widthPx: 100, heightPx: 50, bytes: PNG })
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 10, y: 20 })
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 500, y: -5 })
-    let saved = await layout.load()
-    assert.deepEqual(saved.placements, [{ deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 100, y: 0 }])
+    const a = await layout.addMap({ name: 'House', widthPx: 1000, heightPx: 1000 })
+    const b = await layout.addMap({ name: 'Shop', widthPx: 1000, heightPx: 1000 })
+    await layout.setPlacement(a.id, { deviceKey: K(2), x: 10, y: 10 })
+    const moved = await layout.setPlacement(a.id, { deviceKey: K(2), x: 5000, y: -5, seen: { name: 'Lights', deviceId: '29-1-2', evil: 'x' } })
+    assert.deepEqual(moved, { deviceKey: K(2), x: 1000, y: 0, seen: { name: 'Lights', deviceId: '29-1-2' } }, 'clamped, one per device per map')
+    await layout.setPlacement(b.id, { deviceKey: K(2), x: 90, y: 90 })
+    await layout.removePlacement(b.id, K(2))
+    const l = await layout.load()
+    assert.equal(l.maps.find((m) => m.id === a.id).placements.length, 1)
+    assert.equal(l.maps.find((m) => m.id === b.id).placements.length, 0)
+    await assert.rejects(layout.setPlacement(a.id, { deviceKey: '../etc', x: 1, y: 1 }), { status: 400 })
+    await assert.rejects(layout.setPlacement('nope', { deviceKey: K(2), x: 1, y: 1 }), { status: 404 })
+    assert.deepEqual(cleanSeen({ name: 5, dsk: 'abc' }), { dsk: 'abc' })
+})
 
-    await assert.rejects(layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:3', planId: 'nope', x: 1, y: 1 }), { status: 404 })
-    await assert.rejects(layout.setPlacement({ deviceKey: '../etc', planId: plan.id, x: 1, y: 1 }), { status: 400 })
-    await assert.rejects(layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:3', planId: plan.id, x: '1', y: 1 }), { status: 400 })
+test('backgrounds: first image sizes an empty map; replace keeps framing; shared backgrounds fork; unset cleans up', async () => {
+    const layout = await fresh()
+    const a = await layout.addMap({ name: 'House' })
+    const set = await layout.setMapImage(a.id, { bytes: PNG1 })
+    assert.deepEqual([set.map.widthPx, set.map.heightPx], [1, 1], 'canvas takes the image size (nothing placed yet)')
+    assert.deepEqual(set.map.background.imageRect, { x: 0, y: 0, w: 1, h: 1 })
+    assert.equal(set.stretched, false)
+    const bgId = set.background.id
 
-    await layout.removePlacement(plan.id, 'zwave:cdfbb3c7:2')
-    assert.deepEqual((await layout.load()).placements, [])
+    await layout.updateMap(a.id, { widthPx: 3000, heightPx: 5100 })
+    await layout.setPlacement(a.id, { deviceKey: K(2), x: 2000, y: 3000 })
+    const dark = await layout.setMapImage(a.id, { bytes: PNG, imgWidthPx: 1, imgHeightPx: 1, variant: 'dark' })
+    assert.equal(dark.background.id, bgId, 'unshared background is updated in place')
+    assert.ok(dark.background.imageDark)
+    const replaced = await layout.setMapImage(a.id, { bytes: PNG1 })
+    assert.notEqual(replaced.background.image, set.background.image)
+    assert.ok(!existsSync(path.join(layout.imagesDir, set.background.image)), 'old file removed')
+    assert.deepEqual(replaced.map.background.imageRect, { x: 0, y: 0, w: 1, h: 1 }, 'framing kept')
 
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:4', planId: plan.id, x: 1, y: 1 })
-    await layout.deletePlan(plan.id)
-    saved = await layout.load()
-    assert.deepEqual(saved, { version: 1, plans: [], placements: [] })
-    assert.ok(!existsSync(layout.imagePath(plan)))
+    // a second map sharing the same background (as step 5's library will allow)
+    const b = await layout.addMap({ name: 'House (battery)' })
+    const raw = await layout.load()
+    raw.maps.find((m) => m.id === b.id).background = { id: bgId, imageRect: { x: 0, y: 0, w: 1, h: 1 } }
+    await writeFile(layout.file, JSON.stringify(raw))
+    const forked = await layout.setMapImage(b.id, { bytes: PNG1 })
+    assert.notEqual(forked.background.id, bgId, 'shared background forked for the changed map')
+    const l = await layout.load()
+    assert.equal(l.maps.find((m) => m.id === a.id).background.id, bgId, 'the other map keeps its background')
+    const forkBg = l.backgrounds.find((x) => x.id === forked.background.id)
+    assert.ok(forkBg.imageDark && forkBg.imageDark !== l.backgrounds.find((x) => x.id === bgId).imageDark, 'dark image copied, never shared')
+
+    await layout.removeMapImage(a.id, 'dark')
+    assert.equal((await layout.load()).backgrounds.find((x) => x.id === bgId).imageDark, undefined)
+    const before = images(layout).length
+    await layout.removeMapImage(a.id)
+    const after = await layout.load()
+    assert.equal(after.maps.find((m) => m.id === a.id).background, null)
+    assert.equal(after.maps.find((m) => m.id === a.id).placements.length, 1, 'placements survive unsetting the background')
+    assert.ok(!after.backgrounds.some((x) => x.id === bgId), 'unused background removed')
+    assert.ok(images(layout).length < before, 'with its files')
+
+    await assert.rejects(layout.setMapImage(a.id, { bytes: SVG, imgWidthPx: 1, imgHeightPx: 1 }), { status: 415 })
+    await assert.rejects(layout.setMapImage(a.id, { bytes: PNG }), { status: 400 }, 'size unknown and not supplied')
+    await assert.rejects(layout.setMapImage(GRAPH_ID, { bytes: PNG1 }), { status: 409 })
+    await layout.deleteMap(b.id)
+    assert.deepEqual((await layout.load()).backgrounds, [], 'deleting the last map using a background removes it')
+})
+
+test('placeholders can be linked to a device (taking its spot) or deleted', async () => {
+    const layout = await fresh()
+    const m = await layout.addMap({ name: 'House', widthPx: 1000, heightPx: 1000 })
+    await layout.setPlacement(m.id, { deviceKey: K(2), x: 1, y: 2 })
+    const raw = await layout.load()
+    raw.maps.find((x) => x.id === m.id).placements.push(
+        { id: 'ph1', deviceKey: null, x: 300, y: 400, placeholder: { name: 'Thermostat' } },
+        { id: 'ph2', deviceKey: null, x: 5, y: 5, placeholder: { name: 'Gone' } })
+    await writeFile(layout.file, JSON.stringify(raw))
+
+    const linked = await layout.linkPlaceholder(m.id, 'ph1', K(2), { name: 'Lights' })
+    assert.deepEqual(linked, { deviceKey: K(2), x: 300, y: 400, seen: { name: 'Lights' } })
+    let pls = (await layout.load()).maps.find((x) => x.id === m.id).placements
+    assert.equal(pls.filter((p) => p.deviceKey === K(2)).length, 1, "the device's old spot is replaced")
+    await assert.rejects(layout.linkPlaceholder(m.id, 'ph1', K(2)), { status: 404 }, 'already linked')
+    await layout.removePlaceholder(m.id, 'ph2')
+    pls = (await layout.load()).maps.find((x) => x.id === m.id).placements
+    assert.equal(pls.length, 1)
+    await assert.rejects(layout.removePlaceholder(m.id, 'ph2'), { status: 404 })
 })
 
 test('concurrent placements are all kept', async () => {
     const layout = await fresh()
-    const plan = await layout.addPlan({ name: 'p', widthPx: 100, heightPx: 100, bytes: PNG })
-    await Promise.all([2, 3, 4, 5, 6].map((id) =>
-        layout.setPlacement({ deviceKey: `zwave:cdfbb3c7:${id}`, planId: plan.id, x: id, y: id })))
-    assert.equal((await layout.load()).placements.length, 5)
+    const m = await layout.addMap({ name: 'p', widthPx: 100, heightPx: 100 })
+    await Promise.all([2, 3, 4, 5, 6].map((id) => layout.setPlacement(m.id, { deviceKey: K(id), x: id, y: id })))
+    assert.equal((await layout.load()).maps.find((x) => x.id === m.id).placements.length, 5)
 })
 
-test('plans without an image start blank; legacy drawing shapes in the file are left alone', async () => {
-    const layout = await fresh()
-    const a = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 2000 })
-    assert.equal(a.image, null)
-    await assert.rejects(layout.addBlankPlan({ name: 'x', widthPx: 0, heightPx: 1 }), { status: 400 })
-    // a layout saved while TopoSite had drawing tools
-    const legacy = JSON.parse(await readFile(layout.file, 'utf8'))
-    legacy.shapes = [{ id: 's1', planId: a.id, type: 'rect', x: 0, y: 0, w: 1, h: 1 }]
-    await writeFile(layout.file, JSON.stringify(legacy))
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: a.id, x: 1, y: 1 })
-    assert.deepEqual((await layout.load()).shapes, legacy.shapes, 'shapes survive other writes untouched')
-})
-
-test('updatePlan renames, resizes blank plans and sets scale; image plans keep their size', async () => {
-    const layout = await fresh()
-    const blank = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 2000 })
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: blank.id, x: 500, y: 1900 })
-    const grown = await layout.updatePlan(blank.id, { heightPx: 3000, metersPerPixel: 0.3048 / 50, name: 'House + garage' })
-    assert.equal(grown.heightPx, 3000)
-    assert.equal(grown.widthPx, 3000)
-    assert.equal(grown.metersPerPixel, 0.3048 / 50)
-    assert.equal(grown.name, 'House + garage')
-    assert.deepEqual((await layout.load()).placements[0], { deviceKey: 'zwave:cdfbb3c7:2', planId: blank.id, x: 500, y: 1900 },
-        'growing a plan leaves positions alone')
-
-    const img = await layout.addPlan({ name: 'img', widthPx: 10, heightPx: 10, bytes: PNG })
-    const grownImg = await layout.updatePlan(img.id, { heightPx: 20 })
-    assert.equal(grownImg.heightPx, 20, 'image plans can grow')
-    assert.deepEqual(grownImg.imageRect, { x: 0, y: 0, w: 10, h: 10 }, 'and the image keeps its size')
-    assert.equal((await layout.updatePlan(img.id, { metersPerPixel: 0.01 })).metersPerPixel, 0.01, 'scale is fine on image plans')
-    await assert.rejects(layout.updatePlan(blank.id, { widthPx: 0 }), { status: 400 })
-    await assert.rejects(layout.updatePlan(blank.id, { metersPerPixel: -1 }), { status: 400 })
-    await assert.rejects(layout.updatePlan('nope', { name: 'x' }), { status: 404 })
-})
-
-test('padTop/padLeft add room and move placements with the background; expect* guards retries', async () => {
-    const layout = await fresh()
-    const plan = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 3000 })
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 500, y: 600 })
-    const padded = await layout.updatePlan(plan.id, { padTop: 2100, expectHeightPx: 3000 })
-    assert.equal(padded.heightPx, 5100)
-    assert.equal(padded.widthPx, 3000)
-    const saved = await layout.load()
-    assert.deepEqual([saved.placements[0].x, saved.placements[0].y], [500, 2700])
-    await assert.rejects(layout.updatePlan(plan.id, { padTop: 2100, expectHeightPx: 3000 }), { status: 409 }, 'a retry is refused')
-    assert.equal((await layout.load()).plans[0].heightPx, 5100, 'and changes nothing')
-    await assert.rejects(layout.updatePlan(plan.id, { padTop: -1 }), { status: 400 })
-})
-
-test('a background can be set on, replaced in and removed from an existing plan — placements stay', async () => {
-    const layout = await fresh()
-    const plan = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 5100 })
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 500, y: 3000 })
-
-    const set = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550 })
-    assert.match(set.image, new RegExp(`^${plan.id}-[0-9a-f]{6}\\.png$`))
-    assert.deepEqual(set.imageRect, { x: 0, y: 0, w: 3000, h: 5100 }, 'a new background covers the plan')
-    assert.equal(set.stretched, false, '1500x2550 has the same aspect as 3000x5100')
-    assert.ok(existsSync(layout.imagePath(set)))
-
-    const pad = await layout.updatePlan(plan.id, { padTop: 100 })
-    assert.deepEqual(pad.imageRect, { x: 0, y: 100, w: 3000, h: 5100 }, 'padding moves the background with the drawing')
-
-    const replaced = await layout.setImage(plan.id, { bytes: JPEG, imgWidthPx: 400, imgHeightPx: 400 })
-    assert.notEqual(replaced.image, set.image)
-    assert.ok(!existsSync(layout.imagePath(set)), 'old image file deleted')
-    assert.deepEqual(replaced.imageRect, { x: 0, y: 100, w: 3000, h: 5100 }, 'a replacement takes the old one\'s place')
-    assert.equal(replaced.stretched, true)
-
-    const saved = await layout.load()
-    assert.deepEqual([saved.placements[0].x, saved.placements[0].y], [500, 3100])
-
-    const removed = await layout.removeImage(plan.id)
-    assert.equal(removed.image, null)
-    assert.equal(removed.imageRect, undefined)
-    assert.ok(!existsSync(layout.imagePath(replaced)))
-    assert.equal((await layout.load()).placements.length, 1, 'placements survive removing the background')
-
-    await assert.rejects(layout.setImage(plan.id, { bytes: Buffer.from('<svg/>'), imgWidthPx: 1, imgHeightPx: 1 }), { status: 415 })
-    await assert.rejects(layout.setImage('nope', { bytes: PNG, imgWidthPx: 1, imgHeightPx: 1 }), { status: 404 })
-    assert.deepEqual(imageRectOf({ widthPx: 7, heightPx: 9 }), { x: 0, y: 0, w: 7, h: 9 }, 'legacy plans: whole plan')
-})
-
-test('a dark variant shares the light image\'s rect; either can be removed; delete cleans both', async () => {
-    const layout = await fresh()
-    const plan = await layout.addBlankPlan({ name: 'House', widthPx: 3000, heightPx: 5100 })
-    const light = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 3000, imgHeightPx: 5100 })
-    await layout.updatePlan(plan.id, { padTop: 50 })
-    const dark = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 3000, imgHeightPx: 5100, variant: 'dark' })
-    assert.match(dark.imageDark, /-dark-[0-9a-f]{6}\.png$/)
-    assert.equal(dark.image, light.image, 'light image untouched')
-    assert.deepEqual(dark.imageRect, { x: 0, y: 50, w: 3000, h: 5100 }, 'dark takes the shared rect')
-    assert.ok(existsSync(layout.imagePath(dark, 'dark')))
-
-    const noDark = await layout.removeImage(plan.id, 'dark')
-    assert.equal(noDark.imageDark, undefined)
-    assert.equal(noDark.image, light.image, 'removing dark keeps light')
-    assert.deepEqual(noDark.imageRect, { x: 0, y: 50, w: 3000, h: 5100 })
-
-    const again = await layout.setImage(plan.id, { bytes: PNG, imgWidthPx: 3000, imgHeightPx: 5100, variant: 'dark' })
-    await layout.deletePlan(plan.id)
-    assert.ok(!existsSync(layout.imagePath(again, 'light')) && !existsSync(layout.imagePath(again, 'dark')), 'both files gone')
-
-    const p2 = await layout.addBlankPlan({ name: 'Dark only', widthPx: 100, heightPx: 100 })
-    const d2 = await layout.setImage(p2.id, { bytes: PNG, imgWidthPx: 100, imgHeightPx: 100, variant: 'dark' })
-    assert.equal(d2.image, null)
-    assert.deepEqual(d2.imageRect, { x: 0, y: 0, w: 100, h: 100 })
-    const cleared = await layout.removeImage(p2.id)
-    assert.equal(cleared.imageDark, undefined)
-    assert.equal(cleared.imageRect, undefined)
-    await assert.rejects(layout.setImage(p2.id, { bytes: PNG, imgWidthPx: 1, imgHeightPx: 1, variant: 'sepia' }), { status: 400 })
-})
-
-test("a map's first image sets its size while nothing is placed; otherwise the size stays", async () => {
-    const layout = await fresh()
-    const empty = await layout.addBlankPlan({ name: 'New map', widthPx: 3000, heightPx: 2000 })
-    const set = await layout.setImage(empty.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550 })
-    assert.deepEqual([set.widthPx, set.heightPx], [1500, 2550])
-    assert.deepEqual(set.imageRect, { x: 0, y: 0, w: 1500, h: 2550 })
-    assert.equal(set.stretched, false)
-
-    const used = await layout.addBlankPlan({ name: 'Has nodes', widthPx: 3000, heightPx: 2000 })
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: used.id, x: 10, y: 10 })
-    const kept = await layout.setImage(used.id, { bytes: PNG, imgWidthPx: 1500, imgHeightPx: 2550 })
-    assert.deepEqual([kept.widthPx, kept.heightPx], [3000, 2000], 'placed nodes keep their coordinates')
-    assert.equal(kept.stretched, true)
-})
-
-test('positions are per plan: placing or unplacing a node on one plan leaves the others alone', async () => {
-    const layout = await fresh()
-    const house = await layout.addBlankPlan({ name: 'House', widthPx: 1000, heightPx: 1000 })
-    const shop = await layout.addBlankPlan({ name: 'Shop', widthPx: 1000, heightPx: 1000 })
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: house.id, x: 10, y: 10 })
-    await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: shop.id, x: 90, y: 90 })
-    let saved = (await layout.load()).placements
-    assert.deepEqual(saved.map((p) => [p.planId, p.x]).sort(), [[house.id, 10], [shop.id, 90]].sort(), 'the House spot survives placing on Shop')
-    await layout.removePlacement(shop.id, 'zwave:cdfbb3c7:2')
-    saved = (await layout.load()).placements
-    assert.deepEqual(saved.map((p) => p.planId), [house.id], 'unplacing on Shop keeps House')
-})
-
-test('placements keep an identity snapshot; placeholders can be linked to a device or deleted', async () => {
-    const layout = await fresh()
-    const plan = await layout.addBlankPlan({ name: 'House', widthPx: 1000, heightPx: 1000 })
-    const p = await layout.setPlacement({ deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 1, y: 2,
-        seen: { name: 'Lights', deviceId: '29-12341-17479', evil: 'x' } })
-    assert.deepEqual(p.seen, { name: 'Lights', deviceId: '29-12341-17479' })
-    assert.deepEqual(cleanSeen({ name: 5, dsk: 'abc' }), { dsk: 'abc' })
-
-    // a placeholder as an import would write it, plus the same device already placed elsewhere on the plan
-    const raw = await layout.load()
-    raw.placements.push({ id: 'ph1', planId: plan.id, deviceKey: null, x: 300, y: 400,
-        placeholder: { name: 'Thermostat', loc: 'Hallway', deviceId: '1-2-3', productLabel: 'T6' } })
-    await writeFile(layout.file, JSON.stringify(raw))
-
-    const linked = await layout.linkPlaceholder(plan.id, 'ph1', 'zwave:cdfbb3c7:2', { name: 'Lights' })
-    assert.deepEqual(linked, { deviceKey: 'zwave:cdfbb3c7:2', planId: plan.id, x: 300, y: 400, seen: { name: 'Lights' } })
-    const after = (await layout.load()).placements
-    assert.equal(after.length, 1, "the device's old spot on this plan is replaced by the placeholder's")
-    assert.equal(after[0].placeholder, undefined)
-    await assert.rejects(layout.linkPlaceholder(plan.id, 'ph1', 'zwave:cdfbb3c7:2'), { status: 404 }, 'already linked')
-
-    const raw2 = await layout.load()
-    raw2.placements.push({ id: 'ph2', planId: plan.id, deviceKey: null, x: 5, y: 5, placeholder: { name: 'Gone' } })
-    await writeFile(layout.file, JSON.stringify(raw2))
-    await layout.removePlaceholder(plan.id, 'ph2')
-    assert.equal((await layout.load()).placements.length, 1)
-    await assert.rejects(layout.removePlaceholder(plan.id, 'ph2'), { status: 404 })
-})
-
-test("store dir: env overrides, then <cwd>/store, then two levels above the plugin", async () => {
+test('store dir: env overrides, then <cwd>/store, then two levels above the plugin', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'toposite-store-'))
     const store = path.join(root, 'store')
     await mkdir(path.join(store, 'plugins', 'toposite'), { recursive: true })

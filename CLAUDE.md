@@ -56,7 +56,7 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model; adds `key` = `zwave:<homeId>:<nodeId>` from `zwave.homeHex` |
 | `lib/auth.js` | **The only file that reads Z-Wave JS UI's auth files** (`settings.json` `gateway.authEnabled`, `.session-secret` / `SESSION_SECRET`, `users.json`, `TRUSTED_API_LISTEN`) — accepts exactly the logins Z-Wave JS UI accepts; HS256 JWT check with `node:crypto` |
 | `lib/exchange.js` | Map export/import: file format, validation, match proposals (`matchScore`, `proposeMatches`) |
-| `lib/layout.js` | Plans (background image + optional dark variant, or none), placements (per plan, with identity snapshots; placeholders) (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
+| `lib/layout.js` | Data model v2 (MAPS.md): settings, background library (image + optional dark variant; files never shared, forked on change, unused ones collected), maps with nested positions (identity snapshots; placeholders) (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); one-time v1 → v2 migration (original kept as `layout.v1.json`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
 | `lib/store.js` | Store dir resolution (`TOPOSITE_STORE_DIR` → `STORE_DIR` → `<cwd>/store` → two dirs above the plugin; must contain `settings.json`), atomic JSON writes |
 | `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4 — no SN, skipped by sn_audit) |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
@@ -73,21 +73,21 @@ the request; the static page files are open (no data in them).
 | Route | Returns |
 |---|---|
 | `GET /toposite/` | Map page (static files from `public/`; `/toposite` redirects to `/toposite/`) |
-| `GET /toposite/api/layout` | `{success, data: {version, plans[], placements[]}}` (ROADMAP data model; a legacy `shapes[]` may be present and is ignored) |
-| `POST /toposite/api/plans?name&widthPx&heightPx` | Body = raw PNG/JPEG/WebP bytes (≤ 25 MB; size decoded by the browser) → new plan |
-| `POST /toposite/api/plans/blank` | JSON `{name, widthPx, heightPx}` → plan with no image yet (shown as a grid) |
-| `PATCH /toposite/api/plans/:id` | JSON, any of `{name, widthPx, heightPx, metersPerPixel, padTop, padLeft, expectWidthPx, expectHeightPx}`. Growing keeps all positions (top-left origin) and the background's `imageRect`. `padTop`/`padLeft` add room above/left and move the plan's placements and background with it; `expect*` refuses (409) unless the current size matches, so a pad is safe to retry |
-| `DELETE /toposite/api/plans/:id` | Deletes the plan, its images and placements |
-| `PUT /toposite/api/plans/:id/image?imgWidthPx&imgHeightPx[&variant=dark]` | Body = raw PNG/JPEG/WebP → set or replace the plan's background, keeping placements and scale. New: covers the whole plan; replacement: takes the old `imageRect`. Response has `stretched: true` if the aspect differs >2% |
-| `DELETE /toposite/api/plans/:id/image[?variant=dark]` | Remove the background (both variants; `?variant=dark` just the dark one); everything else stays. `variant=dark` images (plan field `imageDark`) share `imageRect` and are shown while the UI is dark |
-| `GET /toposite/api/plans/:id/image` | The plan image (the page fetches it with the token → object URL) |
-| `PUT /toposite/api/placements` | JSON `{deviceKey, planId, x, y}` (plan pixels, clamped) — one placement per device **per plan**; stores an identity snapshot `seen: {name, deviceId, dsk?}` |
-| `DELETE /toposite/api/plans/:id/placements/:deviceKey` | Unplace on that plan only |
-| `PUT /toposite/api/plans/:id/placeholders/:phId` | JSON `{deviceKey}` → link an imported placeholder; the device takes its spot on that plan |
-| `DELETE /toposite/api/plans/:id/placeholders/:phId` | Delete a placeholder |
-| `GET /toposite/api/plans/:id/export` | `.toposite` file (attachment): map, images (base64), node manifest, positions by `ref` (`lib/exchange.js`) |
+| `GET /toposite/api/layout` | `{success, data: {version: 2, settings: {defaultMapId}, backgrounds[], maps[]}}` (MAPS.md data model). Maps have `layout: 'graph' \| 'placed'`; the built-in `graph` map (Network Graph, `builtin: true`) can't be renamed, deleted or placed on. Placed maps carry `widthPx, heightPx, background: {id, imageRect} \| null, nodes: {start, exceptions[]}, view, placements[]` |
+| `POST /toposite/api/maps` | JSON `{name, widthPx?, heightPx?, nodes?}` → new placed map (default 3000 × 2000, grid until it has a background) |
+| `PATCH /toposite/api/maps/:id` | JSON, any of `{name, nodes, view, widthPx, heightPx, metersPerPixel, padTop, padLeft, expectWidthPx, expectHeightPx}`. Growing keeps positions (top-left origin) and `imageRect`; `padTop`/`padLeft` move everything; `expect*` refuses (409) unless the current size matches. Graph map: `nodes`/`view` only |
+| `DELETE /toposite/api/maps/:id` | Deletes the map and its positions; backgrounds no longer used go too. Graph map: 409. If it was the default, the default becomes `graph` |
+| `PATCH /toposite/api/settings` | JSON `{defaultMapId}` |
+| `PUT /toposite/api/maps/:id/image?imgWidthPx&imgHeightPx[&variant=dark]` | Body = raw PNG/JPEG/WebP (≤ 25 MB) → set or replace the map's background, keeping positions and scale. A background shared with other maps is forked first (they keep the old picture). First image on an empty map sizes the canvas; otherwise covers the canvas (new) or takes the old `imageRect` (replace). `stretched: true` if the aspect differs >2% |
+| `DELETE /toposite/api/maps/:id/image[?variant=dark]` | Remove the map's background (or just its dark version); positions stay |
+| `GET /toposite/api/backgrounds/:id/image[?variant=dark]` | A library background's image (the page fetches it with the token → object URL); `imageDark` is shown while the UI is dark |
+| `PUT /toposite/api/maps/:id/placements` | JSON `{deviceKey, x, y}` (canvas pixels, clamped) — one position per device per map; stores an identity snapshot `seen: {name, deviceId, dsk?}` |
+| `DELETE /toposite/api/maps/:id/placements/:deviceKey` | Unplace on that map only |
+| `PUT /toposite/api/maps/:id/placeholders/:phId` | JSON `{deviceKey}` → link an imported placeholder; the device takes its spot |
+| `DELETE /toposite/api/maps/:id/placeholders/:phId` | Delete a placeholder |
+| `GET /toposite/api/maps/:id/export` | `.toposite` file v2 (attachment): map (size, framing, node list), images (base64), node manifest, positions by `ref` (`lib/exchange.js`). Graph map: 409 |
 | `POST /toposite/api/import/preview` | Body = raw file (`application/x-toposite`, ≤ 40 MB) → `{token, map, source, entries[] (with proposed key + confidence), nodes[]}`; held 10 min |
-| `POST /toposite/api/import/commit` | JSON `{token, matches: {ref: deviceKey|null}, name?}` → new plan (never overwrites; " (imported)" on a name clash); null → placeholder |
+| `POST /toposite/api/import/commit` | JSON `{token, matches: {ref: deviceKey\|null}, name?}` → `{map, linked, placeholders}` — always a new map (" (imported)" on a name clash); null → placeholder |
 | `GET /toposite/api/nodes` | `{success, data: [node]}` — node: `id, name, location, role (controller/listening/sleeping), isListening, isFrequentListening, isRouting, status (ok/dead/failed), neighbors[], unknownNeighbors[], lwr, nlwr` (routes: `hops, repeaters[], rssi, repeaterRSSI[], protocolDataRate, failedBetween`). Virtual nodes (broadcast 255, multicast) are skipped. RSSI is dBm, `'saturated'`, `'no-signal'` or `null` (zwave-js RssiError 126/125/127). `unknownNeighbors` = IDs in the controller's neighbor table with no node (removed nodes) |
 
 ---
@@ -324,7 +324,7 @@ must not clash with the meanings above.
 
 See `ROADMAP.md` for detail.
 
-- **Phase 1 (floor-plan map, Z-Wave):** In progress — node API + read-only map page with auto-layout and neighbor refresh; floor-plan upload/placement next (needs auth)
+- **Phase 1 (floor-plan map, Z-Wave):** In progress — map page, backgrounds, placement, export/import; MAPS.md step 1 (data model v2) done, step 2 (maps UI) next
 - **Phase 2 (room panoramas):** Designed
 - **Phase 3 (satellite view):** Designed
 - **Later (Zigbee and IP layers):** Deferred

@@ -45,85 +45,73 @@ export default class TopoSite {
             return getNodes(this.zwave)
         })
 
+        // Everything TopoSite stores (MAPS.md data model v2): settings, backgrounds, maps
         api('get', '/layout', () => this._layout().load())
 
-        // Body: the raw image bytes. Query: name, widthPx, heightPx (decoded by the browser).
-        api('post', '/plans', async (req) => {
+        // ---- maps
+        // Body (JSON): {name, widthPx?, heightPx?, nodes?} → a new placed map (blank grid)
+        api('post', '/maps', (req) => this._layout().addMap(req.body ?? {}))
+        // Body (JSON): any of {name, nodes, view, widthPx, heightPx, padTop, padLeft,
+        // expectWidthPx, expectHeightPx, metersPerPixel} — see Layout.updateMap
+        api('patch', '/maps/:id', (req) => this._layout().updateMap(req.params.id, req.body))
+        api('delete', '/maps/:id', (req) => this._layout().deleteMap(req.params.id))
+        // Body (JSON): {defaultMapId}
+        api('patch', '/settings', (req) => this._layout().updateSettings(req.body ?? {}))
+
+        // ---- a map's background
+        // Body: raw image bytes. Query: variant=light|dark (dark shows while the UI is
+        // dark), imgWidthPx/imgHeightPx (browser-decoded; used if the header can't be read)
+        api('put', '/maps/:id/image', async (req) => {
             const bytes = await readBody(req, MAX_IMAGE_BYTES)
-            return this._layout().addPlan({
-                name: req.query.name,
-                widthPx: Number(req.query.widthPx),
-                heightPx: Number(req.query.heightPx),
-                bytes,
-            })
-        })
-
-        // Body (JSON): {name, widthPx, heightPx} → a blank plan to draw on
-        api('post', '/plans/blank', (req) => {
-            const { name, widthPx, heightPx } = req.body ?? {}
-            return this._layout().addBlankPlan({ name, widthPx, heightPx })
-        })
-
-        // Body (JSON): any of {name, widthPx, heightPx, metersPerPixel}
-        api('patch', '/plans/:id', (req) => this._layout().updatePlan(req.params.id, req.body))
-
-        api('delete', '/plans/:id', (req) => this._layout().deletePlan(req.params.id))
-
-
-        // Body: raw image bytes. Query: imgWidthPx, imgHeightPx (decoded by the browser),
-        // variant=light|dark (default light; dark is shown while the UI is in dark mode).
-        // Sets or replaces the background; placements and scale stay.
-        api('put', '/plans/:id/image', async (req) => {
-            const bytes = await readBody(req, MAX_IMAGE_BYTES)
-            return this._layout().setImage(req.params.id, {
+            return this._layout().setMapImage(req.params.id, {
                 bytes,
                 imgWidthPx: Number(req.query.imgWidthPx),
                 imgHeightPx: Number(req.query.imgHeightPx),
                 variant: req.query.variant ?? 'light',
             })
         })
+        // ?variant=dark unsets just the dark version; default unsets the background
+        api('delete', '/maps/:id/image', (req) => this._layout().removeMapImage(req.params.id, req.query.variant ?? 'all'))
 
-        // ?variant=dark removes just the dark version; default removes both
-        api('delete', '/plans/:id/image', (req) => this._layout().removeImage(req.params.id, req.query.variant ?? 'all'))
-
-        api('get', '/plans/:id/image', async (req, res) => {
+        // A library background's image file (?variant=dark for the dark version)
+        api('get', '/backgrounds/:id/image', async (req, res) => {
             const layout = await this._layout().load()
-            const plan = layout.plans.find((p) => p.id === req.params.id)
-            const field = req.query.variant === 'dark' ? 'imageDark' : 'image'
-            if (!plan || !plan[field]) throw httpError(404, 'No such plan image')
-            res.type(plan[field].split('.').pop())
+            const bg = layout.backgrounds.find((b) => b.id === req.params.id)
+            const variant = req.query.variant === 'dark' ? 'dark' : 'light'
+            const file = bg?.[variant === 'dark' ? 'imageDark' : 'image']
+            if (!file) throw httpError(404, 'No such background image')
+            res.type(file.split('.').pop())
             res.set('Cache-Control', 'private, max-age=3600')
             res.set('X-Content-Type-Options', 'nosniff')
             await new Promise((resolve, reject) => {
-                createReadStream(this._layout().imagePath(plan, field === 'imageDark' ? 'dark' : 'light')).on('error', reject).on('end', resolve).pipe(res)
+                createReadStream(this._layout().imagePath(bg, variant)).on('error', reject).on('end', resolve).pipe(res)
             })
             return undefined // response already sent
         })
 
-        // Body (JSON, parsed by Z-Wave JS UI's express.json): {deviceKey, planId, x, y}
-        // Body (JSON): {deviceKey, planId, x, y}. The node's identity is snapshotted
-        // with the placement so the link can be repaired after a re-inclusion.
-        api('put', '/placements', (req) => {
+        // ---- positions on a map
+        // Body (JSON): {deviceKey, x, y}. The node's identity is snapshotted with the
+        // placement so the link can be repaired after a re-inclusion.
+        api('put', '/maps/:id/placements', (req) => {
             const body = req.body ?? {}
-            return this._layout().setPlacement({ ...body, seen: this._seen(body.deviceKey) })
+            return this._layout().setPlacement(req.params.id, { ...body, seen: this._seen(body.deviceKey) })
         })
-        // Unplace a device on one plan; its spots on other plans stay
-        api('delete', '/plans/:id/placements/:deviceKey', (req) =>
+        api('delete', '/maps/:id/placements/:deviceKey', (req) =>
             this._layout().removePlacement(req.params.id, req.params.deviceKey))
 
         // Placeholders (imported positions with no matched node): link to a device, or delete
-        api('put', '/plans/:id/placeholders/:phId', (req) => {
+        api('put', '/maps/:id/placeholders/:phId', (req) => {
             const key = req.body?.deviceKey
             return this._layout().linkPlaceholder(req.params.id, req.params.phId, key, this._seen(key))
         })
-        api('delete', '/plans/:id/placeholders/:phId', (req) =>
+        api('delete', '/maps/:id/placeholders/:phId', (req) =>
             this._layout().removePlaceholder(req.params.id, req.params.phId))
 
-        // Export one map as a .toposite file (MAPS.md "Import / export")
-        api('get', '/plans/:id/export', async (req, res) => {
+        // ---- export / import (MAPS.md "Import / export")
+        api('get', '/maps/:id/export', async (req, res) => {
             const out = await buildExport({
                 layout: await this._layout().load(),
-                planId: req.params.id,
+                mapId: req.params.id,
                 nodes: this._nodes(),
                 imagesDir: this._layout().imagesDir,
                 homeId: this.zwave ? homeIdOf(this.zwave) : null,

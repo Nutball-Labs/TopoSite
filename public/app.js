@@ -1,10 +1,12 @@
 // app.js — TopoSite map page (Leaflet, simple/pixel CRS).
 //
-// Reads /toposite/api/nodes and /toposite/api/layout, shows the selected plan
-// image (or a placeholder grid), and draws nodes, routes and neighbor links in
-// Z-Wave JS UI's visual language. With a plan shown, nodes can be dragged into
-// place; positions are saved server-side in plan pixels. Unplaced nodes use a
-// temporary auto-layout and are drawn faded.
+// Reads /toposite/api/nodes and /toposite/api/layout (MAPS.md data model v2:
+// settings, backgrounds, maps) and draws the current map: nodes, routes and
+// neighbor links in Z-Wave JS UI's visual language. On a placed map nodes can be
+// dragged into place (positions saved inside the map, in canvas pixels); unplaced
+// nodes use a temporary auto-layout and are drawn faded. The built-in Network
+// Graph map (layout "graph") is laid out automatically — the live graph layout
+// comes in MAPS.md step 4; until then it uses the same auto-layout.
 //
 // Backgrounds are images the user supplies (light, and optionally a dark version).
 //
@@ -25,7 +27,7 @@ import {
 const GRID_SIZE = 1000
 const POLL_MS = 30_000
 const REFRESH_COOLDOWN_MS = 60_000
-const PLAN_KEY = 'toposite.plan'
+const MAP_KEY = 'toposite.map'
 const PANE_KEY = 'toposite.paneWidth'
 // Z-Wave JS UI's root, as the browser sees it (keeps working behind a path prefix)
 const ZUI_BASE = location.pathname.replace(/toposite\/.*$/, '')
@@ -54,10 +56,10 @@ addLayersButton()
 
 const state = {
     nodes: [],
-    layout: { plans: [], placements: [] },
-    planId: readPref(PLAN_KEY),
-    shownPlanId: undefined, // plan the view was last fitted to
-    imageUrls: new Map(), // planId → {image, url}: object URL of the fetched background
+    layout: { settings: {}, backgrounds: [], maps: [] },
+    mapId: readPref(MAP_KEY),
+    shownMapId: undefined, // map the view was last fitted to
+    imageUrls: new Map(), // "<backgroundId>:<variant>" → {image, url}: object URL of a fetched background
     labelZoom: 0,
 }
 
@@ -66,7 +68,7 @@ addLegend()
 setupPane()
 map.on('zoomend', applyLabelZoom)
 
-// Theme changed (index.html): redraw so a plan's dark/light background swaps
+// Theme changed (index.html): redraw so a map's dark/light background swaps
 window.addEventListener('ts-theme', () => {
     lastLayoutJSON = ''
     reload()
@@ -118,52 +120,61 @@ async function reload() {
             await draw()
         }
         panel.setSummary(nodes)
-        panel.setPlans(layout.plans, currentPlan()?.id, layout.placements)
+        panel.setMaps(layout.maps, currentMap()?.id)
     } catch (error) {
         panel.setStatus(explain(error, "Can't load the map"))
     }
 }
 
-function currentPlan() {
-    const plans = state.layout.plans
-    return plans.find((p) => p.id === state.planId) ?? plans[0] ?? null
+/** The map being shown: the one picked here, else the default map, else the first. */
+function currentMap() {
+    const maps = state.layout.maps
+    return maps.find((m) => m.id === state.mapId) ?? maps.find((m) => m.id === state.layout.settings?.defaultMapId) ?? maps[0] ?? null
+}
+
+/** A placed map's library background, or null. */
+function backgroundOf(map) {
+    return map?.background ? state.layout.backgrounds.find((b) => b.id === map.background.id) ?? null : null
 }
 
 // ---------------------------------------------------------------- rendering
 
 async function draw() {
-    const plan = currentPlan()
+    const cur = currentMap()
+    // `plan` = the current map when it's a placed map (has a canvas); null on the Network Graph
+    const plan = cur?.layout === 'placed' ? cur : null
     const width = plan?.widthPx ?? GRID_SIZE
     const height = plan?.heightPx ?? GRID_SIZE
+    const bg = backgroundOf(plan)
     const bounds = [[0, 0], [height, width]]
 
-    // Background: plan image, or the placeholder grid
+    // Background: the map's image, the grid on a placed map without one, nothing on the graph
     layers.background.clearLayers()
-    if (plan && (plan.image || plan.imageDark)) {
+    if (bg && (bg.image || bg.imageDark)) {
         // Dark version while the UI is dark (if there is one), otherwise the normal image
-        const variant = (isDarkTheme() && plan.imageDark) || !plan.image ? 'dark' : 'light'
-        const url = await planImageUrl(plan, variant).catch((error) => {
+        const variant = (isDarkTheme() && bg.imageDark) || !bg.image ? 'dark' : 'light'
+        const url = await backgroundUrl(bg, variant).catch((error) => {
             panel.setStatus(explain(error, `Can't load image for ${esc(plan.name)}`))
             return null
         })
-        // imageRect: where the picture sits, in plan px (y down); older plans: whole plan
-        const r = plan.imageRect ?? { x: 0, y: 0, w: width, h: height }
+        // imageRect: where the picture sits on this map's canvas, in canvas px (y down)
+        const r = plan.background.imageRect
         const imgBounds = [[height - (r.y + r.h), r.x], [height - r.y, r.x + r.w]]
         if (url) L.imageOverlay(url, imgBounds, { pane: 'ts-background' }).addTo(layers.background)
-    } else {
+    } else if (plan) {
         L.imageOverlay(gridImage(width, height), bounds, { opacity: 0.6, pane: 'ts-background' }).addTo(layers.background)
     }
-    if (state.shownPlanId !== (plan?.id ?? null)) {
-        state.shownPlanId = plan?.id ?? null
+    if (state.shownMapId !== (cur?.id ?? null)) {
+        state.shownMapId = cur?.id ?? null
         map.fitBounds(bounds, { padding: [20, 20] })
         state.labelZoom = map.getZoom() + 0.75
         applyLabelZoom()
     }
 
-    // Positions: saved placements on this plan, auto-layout for the rest
+    // Positions: saved placements on this map, auto-layout for the rest
     const placed = new Map()
-    for (const p of state.layout.placements) {
-        if (plan && p.planId === plan.id && p.deviceKey) placed.set(p.deviceKey, [height - p.y, p.x])
+    for (const p of plan?.placements ?? []) {
+        if (p.deviceKey) placed.set(p.deviceKey, [height - p.y, p.x])
     }
     const side = Math.min(width, height) * 0.9
     const auto = autoLayout(state.nodes, side)
@@ -239,10 +250,10 @@ function drawNodes(pos, plan, placed, height) {
         marker.on('dragend', async () => {
             const { lat, lng } = marker.getLatLng()
             try {
-                await api('placements', {
+                await api(`maps/${plan.id}/placements`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ deviceKey: n.key, planId: plan.id, x: lng, y: height - lat }),
+                    body: JSON.stringify({ deviceKey: n.key, x: lng, y: height - lat }),
                 })
                 panel.setStatus(`Placed ${esc(n.name)}.`)
             } catch (error) {
@@ -259,8 +270,8 @@ function drawNodes(pos, plan, placed, height) {
  */
 function drawPlaceholders(plan, height) {
     if (!plan) return
-    for (const ph of state.layout.placements) {
-        if (ph.planId !== plan.id || !ph.placeholder) continue
+    for (const ph of plan.placements) {
+        if (!ph.placeholder) continue
         const label = `${ph.placeholder.name ?? 'Unknown device'} — not linked`
         const marker = L.marker([height - ph.y, ph.x], {
             keyboard: false,
@@ -305,7 +316,7 @@ function openPlaceholderMenu(ph, marker, plan) {
     link.addEventListener('click', async () => {
         map.closePopup(popup)
         try {
-            await api(`plans/${plan.id}/placeholders/${encodeURIComponent(ph.id)}`, {
+            await api(`maps/${plan.id}/placeholders/${encodeURIComponent(ph.id)}`, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceKey: pick.value }),
             })
             panel.setStatus(`Linked — ${esc(pick.selectedOptions[0].textContent)} now sits at that spot.`)
@@ -319,7 +330,7 @@ function openPlaceholderMenu(ph, marker, plan) {
         if (!armed) { armed = true; del.textContent = 'Really delete?'; return }
         map.closePopup(popup)
         try {
-            await api(`plans/${plan.id}/placeholders/${encodeURIComponent(ph.id)}`, { method: 'DELETE' })
+            await api(`maps/${plan.id}/placeholders/${encodeURIComponent(ph.id)}`, { method: 'DELETE' })
             panel.setStatus('Placeholder deleted.')
         } catch (error) {
             panel.setStatus(explain(error, "Couldn't delete the placeholder"))
@@ -328,13 +339,12 @@ function openPlaceholderMenu(ph, marker, plan) {
     })
 }
 
-/** On a plan with nothing placed, say where the placements are (they're per plan). */
+/** On a map with nothing placed, say where the placements are (they're per map). */
 function hintOtherPlans(plan, placed) {
     if (!plan || placed.size) return
-    const elsewhere = state.layout.plans.filter((p) => p.id !== plan.id &&
-        state.layout.placements.some((pl) => pl.planId === p.id))
+    const elsewhere = state.layout.maps.filter((m) => m.id !== plan.id && m.placements?.some((pl) => pl.deviceKey))
     if (!elsewhere.length) return
-    panel.setStatus(`No nodes placed on ${esc(plan.name)} yet. Positions are saved per plan — yours are on ` +
+    panel.setStatus(`No nodes placed on ${esc(plan.name)} yet. Positions are saved per map — yours are on ` +
         `${elsewhere.map((p) => esc(p.name)).join(', ')}; pick it from the drop-down to see them.`)
 }
 
@@ -345,10 +355,10 @@ function hintOtherPlans(plan, placed) {
 function openNodeMenu(n, marker, plan, isPlaced) {
     marker.closeTooltip()
     const actions = []
-    if (plan && isPlaced && n.key) actions.push('<button type="button" data-act="unplace" title="Remove its saved position on this plan">Unplace</button>')
-    const hint = !plan ? 'Pick a plan to place nodes.'
+    if (plan && isPlaced && n.key) actions.push('<button type="button" data-act="unplace" title="Remove its saved position on this map">Unplace</button>')
+    const hint = !plan ? 'Nodes on the Network Graph are laid out automatically — pick another map to place them.'
         : !n.key ? 'This node has no placement key yet.'
-            : !isPlaced ? 'Not placed — drag it onto the plan.' : ''
+            : !isPlaced ? 'Not placed — drag it onto the map.' : ''
     const div = document.createElement('div')
     div.className = 'ts-menu'
     div.innerHTML = `<div class="ts-menu-title">${esc(nodeLabel(n))} <span class="muted">node ${n.id}</span></div>` +
@@ -360,7 +370,7 @@ function openNodeMenu(n, marker, plan, isPlaced) {
     div.querySelector('[data-act="unplace"]')?.addEventListener('click', async () => {
         map.closePopup(popup)
         try {
-            await api(`plans/${plan.id}/placements/${encodeURIComponent(n.key)}`, { method: 'DELETE' })
+            await api(`maps/${plan.id}/placements/${encodeURIComponent(n.key)}`, { method: 'DELETE' })
             panel.setStatus(`${esc(n.name)} unplaced — back to the automatic layout.`)
         } catch (error) {
             panel.setStatus(explain(error, `Couldn't unplace ${esc(n.name)}`))
@@ -405,7 +415,7 @@ function nodeTooltip(n, plan, isPlaced) {
     if (n.neighbors.length) lines.push(`Neighbors: ${n.neighbors.join(', ')}`)
     if (n.unknownNeighbors?.length) lines.push(`Stale neighbor IDs (no such node): ${n.unknownNeighbors.join(', ')}`)
     if (plan) {
-        lines.push(`<span class="muted">${isPlaced ? 'Drag to move · right-click for options' : 'Not placed — drag onto the plan'}</span>`)
+        lines.push(`<span class="muted">${isPlaced ? 'Drag to move · right-click for options' : 'Not placed — drag onto the map'}</span>`)
     }
     return lines.join('<br>')
 }
@@ -414,14 +424,14 @@ function applyLabelZoom() {
     map.getContainer().classList.toggle('ts-labels', map.getZoom() >= state.labelZoom)
 }
 
-/** Plan images go through api() so the login token is sent; shown via an object URL. */
-async function planImageUrl(plan, variant = 'light') {
-    const key = `${plan.id}:${variant}`
-    const image = variant === 'dark' ? plan.imageDark : plan.image
+/** Background images go through api() so the login token is sent; shown via an object URL. */
+async function backgroundUrl(bg, variant = 'light') {
+    const key = `${bg.id}:${variant}`
+    const image = variant === 'dark' ? bg.imageDark : bg.image
     const cached = state.imageUrls.get(key)
     if (cached?.image === image) return cached.url
     if (cached) URL.revokeObjectURL(cached.url)
-    const res = await api(`plans/${plan.id}/image?variant=${variant}`, { raw: true, headers: { Accept: 'image/*' } })
+    const res = await api(`backgrounds/${bg.id}/image?variant=${variant}`, { raw: true, headers: { Accept: 'image/*' } })
     const url = URL.createObjectURL(await res.blob())
     state.imageUrls.set(key, { image, url })
     return url
@@ -438,7 +448,7 @@ function isDarkTheme() {
 /** Map ▸ Export: download the current map as <name>.toposite. */
 async function exportMap(plan) {
     try {
-        const res = await api(`plans/${plan.id}/export`, { raw: true })
+        const res = await api(`maps/${plan.id}/export`, { raw: true })
         const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? `${plan.name}.toposite`
         const url = URL.createObjectURL(await res.blob())
         const a = Object.assign(document.createElement('a'), { href: url, download: name })
@@ -554,8 +564,8 @@ function openReview(pv) {
                 body: JSON.stringify({ token: pv.token, matches, name: q('#ts-review-name').value.trim() || undefined }),
             })
             close()
-            selectPlan(res.plan.id)
-            panel.setStatus(`Imported ${esc(res.plan.name)}: ${res.linked} node${res.linked === 1 ? '' : 's'} placed` +
+            selectPlan(res.map.id)
+            panel.setStatus(`Imported ${esc(res.map.name)}: ${res.linked} node${res.linked === 1 ? '' : 's'} placed` +
                 (res.placeholders ? `, ${res.placeholders} placeholder${res.placeholders === 1 ? '' : 's'} to link (right-click a dashed marker).` : '.'))
         } catch (error) {
             ok.disabled = false
@@ -566,15 +576,15 @@ function openReview(pv) {
     q('#ts-review-name').focus()
 }
 
-// ---------------------------------------------------------------- plans
+// ---------------------------------------------------------------- maps
 
 /** Map ▸ New…: an empty map (grid); its first background image sets its size. */
 async function newMap(name) {
     try {
-        const plan = await api('plans/blank', {
+        const plan = await api('maps', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, widthPx: 3000, heightPx: 2000 }),
+            body: JSON.stringify({ name }),
         })
         selectPlan(plan.id)
         panel.setStatus(`Created map ${esc(plan.name)}. Give it a picture with Background ▸ Set image…, then drag nodes onto it.`)
@@ -586,7 +596,7 @@ async function newMap(name) {
 /** Map ▸ Rename… */
 async function renameMap(plan, name) {
     try {
-        await api(`plans/${plan.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+        await api(`maps/${plan.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
         panel.setStatus(`Renamed to ${esc(name)}.`)
     } catch (error) {
         panel.setStatus(explain(error, "Couldn't rename the map"))
@@ -595,15 +605,13 @@ async function renameMap(plan, name) {
     reload()
 }
 
-function forgetImage(planId) {
-    for (const variant of ['light', 'dark']) {
-        const cached = state.imageUrls.get(`${planId}:${variant}`)
-        if (cached) URL.revokeObjectURL(cached.url)
-        state.imageUrls.delete(`${planId}:${variant}`)
-    }
+/** Drop cached background images (they're re-fetched on the next draw). */
+function forgetImage() {
+    for (const cached of state.imageUrls.values()) URL.revokeObjectURL(cached.url)
+    state.imageUrls.clear()
 }
 
-/** Set or replace the current plan's background; node positions and scale stay. */
+/** Set or replace the current map's background; node positions and scale stay. */
 async function setBackground(plan, file, variant = 'light') {
     if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return panel.setStatus('Use a PNG, JPEG or WebP image.')
     if (file.size > 25 * 1024 * 1024) return panel.setStatus('That image is over 25 MB — export a smaller one.')
@@ -612,11 +620,11 @@ async function setBackground(plan, file, variant = 'light') {
         const bitmap = await createImageBitmap(file)
         const qs = new URLSearchParams({ imgWidthPx: bitmap.width, imgHeightPx: bitmap.height, variant })
         bitmap.close()
-        const updated = await api(`plans/${plan.id}/image?${qs}`, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
-        forgetImage(plan.id)
+        const updated = await api(`maps/${plan.id}/image?${qs}`, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+        forgetImage()
         const which = variant === 'dark' ? 'Dark-mode background' : 'Background'
         panel.setStatus(`${which} of ${esc(plan.name)} set to ${esc(file.name)}. Node positions are unchanged.` +
-            (updated.stretched ? " Its proportions don't match the plan's, so it's stretched to fit." : ''))
+            (updated.stretched ? " Its proportions don't match where it's drawn on the map, so it's stretched to fit." : ''))
     } catch (error) {
         panel.setStatus(explain(error, 'Background upload failed'))
     }
@@ -626,8 +634,8 @@ async function setBackground(plan, file, variant = 'light') {
 
 async function removeBackground(plan) {
     try {
-        await api(`plans/${plan.id}/image`, { method: 'DELETE' })
-        forgetImage(plan.id)
+        await api(`maps/${plan.id}/image`, { method: 'DELETE' })
+        forgetImage()
         panel.setStatus(`Removed the background of ${esc(plan.name)}. Node positions are unchanged.`)
     } catch (error) {
         panel.setStatus(explain(error, "Couldn't remove the background"))
@@ -638,9 +646,9 @@ async function removeBackground(plan) {
 
 async function deletePlan(plan) {
     try {
-        await api(`plans/${plan.id}`, { method: 'DELETE' })
-        forgetImage(plan.id)
-        panel.setStatus(`Deleted ${esc(plan.name)} and its placements.`)
+        await api(`maps/${plan.id}`, { method: 'DELETE' })
+        forgetImage()
+        panel.setStatus(`Deleted ${esc(plan.name)} and its node positions.`)
     } catch (error) {
         panel.setStatus(explain(error, 'Delete failed'))
     }
@@ -648,8 +656,8 @@ async function deletePlan(plan) {
 }
 
 function selectPlan(id) {
-    state.planId = id
-    writePref(PLAN_KEY, id)
+    state.mapId = id
+    writePref(MAP_KEY, id)
     lastLayoutJSON = '' // force a redraw
     reload()
 }
@@ -782,7 +790,7 @@ function addPanel() {
             const openName = (mode) => {
                 nameMode = mode
                 els.nameform.hidden = false
-                els.name.value = mode === 'rename' ? (currentPlan()?.name ?? '') : ''
+                els.name.value = mode === 'rename' ? (currentMap()?.name ?? '') : ''
                 els.name.placeholder = mode === 'new' ? 'Name of the new map' : 'New name'
                 els.nameok.textContent = mode === 'new' ? 'Create' : 'Rename'
                 els.name.focus()
@@ -790,7 +798,7 @@ function addPanel() {
             }
             const closeName = () => { nameMode = null; els.nameform.hidden = true }
             els.new.addEventListener('click', () => openName('new'))
-            els.rename.addEventListener('click', () => { if (currentPlan()) openName('rename') })
+            els.rename.addEventListener('click', () => { if (currentMap() && !currentMap().builtin) openName('rename') })
             els.namecancel.addEventListener('click', closeName)
             els.name.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeName() })
             els.nameform.addEventListener('submit', (e) => {
@@ -800,13 +808,13 @@ function addPanel() {
                 const mode = nameMode
                 closeName()
                 if (mode === 'new') newMap(name)
-                else if (mode === 'rename' && currentPlan()) renameMap(currentPlan(), name)
+                else if (mode === 'rename' && currentMap()) renameMap(currentMap(), name)
             })
 
             // Two clicks to delete, instead of a confirm() dialog
             els.del.addEventListener('click', () => {
-                const plan = currentPlan()
-                if (!plan) return
+                const plan = currentMap()
+                if (!plan || plan.builtin) return
                 if (armedDelete !== plan.id) {
                     armedDelete = plan.id
                     els.del.textContent = `Really delete "${plan.name}"?`
@@ -825,13 +833,13 @@ function addPanel() {
                 input.addEventListener('change', () => {
                     const file = input.files[0]
                     input.value = ''
-                    const plan = currentPlan()
-                    if (file && plan) setBackground(plan, file, variant)
+                    const plan = currentMap()
+                    if (file && plan?.layout === 'placed') setBackground(plan, file, variant)
                 })
             }
             els.bgdel.addEventListener('click', () => {
-                const plan = currentPlan()
-                if (!plan?.image && !plan?.imageDark) return
+                const plan = currentMap()
+                if (!plan?.background) return
                 if (armedBg !== plan.id) {
                     armedBg = plan.id
                     els.bgdel.textContent = 'Really unset the background?'
@@ -843,7 +851,7 @@ function addPanel() {
                 removeBackground(plan)
             })
 
-            els.export.addEventListener('click', () => { if (currentPlan()) exportMap(currentPlan()) })
+            els.export.addEventListener('click', () => { if (currentMap()?.layout === 'placed') exportMap(currentMap()) })
             els.import.addEventListener('click', () => els.importfile.click())
             els.importfile.addEventListener('change', () => {
                 const file = els.importfile.files[0]
@@ -863,20 +871,20 @@ function addPanel() {
             const withNb = nodes.filter((n) => n.neighbors.length).length
             els.summary.textContent = `${nodes.length} nodes · ${dead} dead/failed · neighbors known for ${withNb}`
         },
-        setPlans(plans, selectedId, placements = []) {
-            const sel = plans.find((p) => p.id === selectedId)
-            els.rename.disabled = !sel
-            els.del.disabled = !sel
-            els.export.disabled = !sel
-            els.bgmenu.disabled = !sel
-            els.bgdel.disabled = !(sel?.image || sel?.imageDark)
-            els.plan.disabled = plans.length === 0
+        setMaps(maps, selectedId) {
+            const sel = maps.find((m) => m.id === selectedId)
+            const placedMap = sel?.layout === 'placed'
+            els.rename.disabled = !sel || !!sel.builtin
+            els.del.disabled = !sel || !!sel.builtin
+            els.export.disabled = !placedMap
+            els.bgmenu.disabled = !placedMap
+            els.bgdel.disabled = !sel?.background
+            els.plan.disabled = maps.length === 0
             // Each map keeps its own node positions — show how many, so a map with
             // none doesn't look like the positions were lost.
-            const count = (id) => placements.filter((pl) => pl.planId === id && pl.deviceKey).length
-            els.plan.innerHTML = plans.length
-                ? plans.map((p) => `<option value="${esc(p.id)}">${esc(p.name)} (${count(p.id)} placed)</option>`).join('')
-                : '<option>No maps yet — Map ▸ New…</option>'
+            const count = (m) => (m.placements ?? []).filter((pl) => pl.deviceKey).length
+            els.plan.innerHTML = maps.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}${
+                m.layout === 'graph' ? ' (automatic layout)' : ` (${count(m)} placed)`}</option>`).join('')
             if (selectedId) els.plan.value = selectedId
         },
     }
@@ -1028,7 +1036,7 @@ function hexPoints(cx, cy, r) {
     return pts.join(' ')
 }
 
-/** Placeholder background for the default view and plans without an image: a light 100-px grid. */
+/** Placeholder background for placed maps without an image: a light 100-px grid. */
 function gridImage(width = GRID_SIZE, height = GRID_SIZE) {
     const step = 100
     let lines = ''

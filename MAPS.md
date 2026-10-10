@@ -243,7 +243,7 @@ stored; it comes from Z-Wave JS UI on every request, keyed by `deviceKey`.
 ## Build order
 
 1. **Data model and migration** (v1 → v2), with the API and tests. The page
-   keeps working on the migrated House map.
+   keeps working on the migrated House map. *Done 2026-10-10.*
 2. **Maps UI**: picker, New map…, default map, view/edit mode, node list
    with quick selects, unplaced tray.
 3. **Rendering rules**: filtering, ghost repeaters, link rules.

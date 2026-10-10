@@ -54,19 +54,28 @@ test('nodes API reports a clear error when Z-Wave is not enabled', async () => {
 test('with Z-Wave JS UI auth on, every API route needs a login', async () => {
     const { routes } = await setup({ authEnabled: true })
     for (const key of Object.keys(routes).filter((k) => k.includes('/api/'))) {
-        const { status, body } = await call(routes[key], { params: { id: 'x', deviceKey: 'x' }, body: {} })
+        const { status, body } = await call(routes[key], { params: { id: 'x', deviceKey: 'x', phId: 'x' }, body: {} })
         assert.equal(status, 401, key)
         assert.equal(body.code, 'auth')
     }
 })
 
-test('placement API validates input and reports missing plans', async () => {
+test('map API: create a map, place a node, read the v2 layout', async () => {
     const { routes } = await setup()
-    const put = routes[`PUT ${BASE}/api/placements`]
-    assert.equal((await call(put, { body: { deviceKey: 'bad', planId: 'p', x: 1, y: 1 } })).status, 400)
-    assert.equal((await call(put, { body: { deviceKey: 'zwave:cdfbb3c7:2', planId: 'nope', x: 1, y: 1 } })).status, 404)
+    const created = await call(routes[`POST ${BASE}/api/maps`], { body: { name: 'House', widthPx: 100, heightPx: 100 } })
+    assert.equal(created.status, 200)
+    const id = created.body.data.id
+    const put = routes[`PUT ${BASE}/api/maps/:id/placements`]
+    assert.equal((await call(put, { params: { id }, body: { deviceKey: 'bad', x: 1, y: 1 } })).status, 400)
+    assert.equal((await call(put, { params: { id: 'nope' }, body: { deviceKey: 'zwave:cdfbb3c7:2', x: 1, y: 1 } })).status, 404)
+    assert.equal((await call(put, { params: { id: 'graph' }, body: { deviceKey: 'zwave:cdfbb3c7:2', x: 1, y: 1 } })).status, 409)
+    const ok = await call(put, { params: { id }, body: { deviceKey: 'zwave:cdfbb3c7:1', x: 10, y: 20 } })
+    assert.equal(ok.status, 200)
     const layout = await call(routes[`GET ${BASE}/api/layout`])
-    assert.deepEqual(layout.body.data, { version: 1, plans: [], placements: [] })
+    assert.equal(layout.body.data.version, 2)
+    const house = layout.body.data.maps.find((m) => m.id === id)
+    assert.deepEqual(house.placements[0].deviceKey, 'zwave:cdfbb3c7:1')
+    assert.ok(layout.body.data.maps.some((m) => m.id === 'graph'))
 })
 
 test('map page: bare base redirects to the trailing-slash URL, files come from public/', async () => {
