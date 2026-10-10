@@ -502,11 +502,16 @@ function isDarkTheme() {
 
 // ---------------------------------------------------------------- export / import
 
-/** Map ▸ Export: download the current map as <name>.toposite. */
-async function exportMap(plan) {
+/** Default export file name: the map's name, made safe for a file system. */
+function exportName(plan) {
+    return `${plan.name.replace(/[\\/:*?"<>|\x00-\x1f]+/g, '_').trim() || 'map'}.toposite`
+}
+
+/** Map ▸ Export: download the current map under the file name the user chose (default <map name>.toposite). */
+async function exportMap(plan, fileName = exportName(plan)) {
+    const name = /\.toposite$/i.test(fileName) ? fileName : `${fileName}.toposite`
     try {
         const res = await api(`maps/${plan.id}/export`, { raw: true })
-        const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? `${plan.name}.toposite`
         const url = URL.createObjectURL(await res.blob())
         const a = Object.assign(document.createElement('a'), { href: url, download: name })
         document.body.appendChild(a)
@@ -879,7 +884,7 @@ function addPanel() {
     let els
     let armedDelete = null
     let armedBg = null
-    let nameMode = null // 'rename' while the name box is open
+    let nameMode = null // 'rename' | 'export' while the name box is open
     const Panel = L.Control.extend({
         onAdd() {
             const div = L.DomUtil.create('div', 'ts-panel')
@@ -895,7 +900,7 @@ function addPanel() {
                     <button type="button" id="ts-rename" title="Rename the current map">Rename…</button>
                     <button type="button" id="ts-setdef" title="Open this map when TopoSite loads">Set as default</button>
                     <button type="button" id="ts-del" title="Delete the current map, its background and its node positions (click twice)">Delete</button>
-                    <button type="button" id="ts-export" title="Download the current map (background and node positions) as a .toposite file">Export</button>
+                    <button type="button" id="ts-export" title="Download the current map (background, node list and positions) as a .toposite file — you choose the file name">Export…</button>
                     <button type="button" id="ts-import" title="Load a .toposite file as a new map — you review how its nodes match this network first">Import…</button>
                     <input type="file" id="ts-importfile" accept=".toposite,application/json" hidden>
                     <form class="ts-nameform" id="ts-nameform" hidden>
@@ -961,14 +966,19 @@ function addPanel() {
             els.plan.addEventListener('change', () => selectPlan(els.plan.value))
 
             // Rename uses a name box in the menu; New… opens its own dialog
+            // Export reuses it for the file name, prefilled with the default
             const openName = (mode) => {
                 nameMode = mode
                 els.nameform.hidden = false
-                els.name.value = currentMap()?.name ?? ''
-                els.name.placeholder = 'New name'
-                els.nameok.textContent = 'Rename'
+                const exporting = mode === 'export'
+                els.name.value = exporting ? exportName(currentMap()) : (currentMap()?.name ?? '')
+                els.name.placeholder = exporting ? 'File name' : 'New name'
+                els.name.setAttribute('aria-label', exporting ? 'Export file name' : 'Map name')
+                els.name.maxLength = exporting ? 200 : 100
+                els.nameok.textContent = exporting ? 'Download' : 'Rename'
                 els.name.focus()
-                els.name.select()
+                // select the name part, so typing replaces it but keeps .toposite
+                els.name.setSelectionRange(0, exporting ? els.name.value.replace(/\.toposite$/i, '').length : els.name.value.length)
             }
             const closeName = () => { nameMode = null; els.nameform.hidden = true }
             els.new.addEventListener('click', () => { closeName(); openNewMap() })
@@ -984,6 +994,7 @@ function addPanel() {
                 const mode = nameMode
                 closeName()
                 if (mode === 'rename' && currentMap()) renameMap(currentMap(), name)
+                else if (mode === 'export' && currentMap()?.layout === 'placed') exportMap(currentMap(), name)
             })
 
             // Two clicks to delete, instead of a confirm() dialog
@@ -1026,7 +1037,7 @@ function addPanel() {
                 removeBackground(plan)
             })
 
-            els.export.addEventListener('click', () => { if (currentMap()?.layout === 'placed') exportMap(currentMap()) })
+            els.export.addEventListener('click', () => { if (currentMap()?.layout === 'placed') openName('export') })
             els.import.addEventListener('click', () => els.importfile.click())
             els.importfile.addEventListener('change', () => {
                 const file = els.importfile.files[0]

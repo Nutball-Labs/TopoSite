@@ -82,7 +82,7 @@ its left edge to resize) has:
 - **Map ▾**: **New…** (name; background — none, one you already have, or
   upload; include all or exclude all; optionally copy node positions from a
   map on the same background), **Rename…**, **Set as default**, **Delete**
-  (click twice), **Export** (downloads the map as a `.toposite` file) and
+  (click twice), **Export…** (downloads the map as a `.toposite` file; the file name starts as the map's name and can be changed) and
   **Import…** (loads one as a new map — you review how each device matches
   this network first; unmatched ones become dashed placeholders you can link
   later in edit mode).
