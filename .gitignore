@@ -32,3 +32,6 @@ sn_audit.txt
 # Claude Code machine-local settings (create .claude/settings.local.json as a symlink
 # to .claude/settings.<machine>.json, or copy one as a starting point)
 .claude/settings.local.json
+
+# Local drafts
+JS-UI_issue.md
