@@ -146,6 +146,7 @@ Checked in Z-Wave JS UI source 2026-10-06/09 and live on 11.24.2 2026-10-09 (`do
 | PR #4390 / #4389 — graph moves vis-network → VueFlow | No color changes; re-check the visual language when it lands |
 | PR #4805 — release binaries built as Node SEA | Unverified whether `import()` of an external plugin works in an SEA binary; Docker unaffected |
 | PR #4757 — Docker image moves to Node 24 | Fine (TopoSite needs ≥ 20) |
+| **#4854 — our issue** (posted 2026-10-10): new plugin TopoSite, how to submit | Proposes a docs PR adding TopoSite to "Available plugins" in `docs/guide/plugins.md` + fixing the directory-vs-`index.js` path (#4427); also asks about an auth helper in `PluginContext` and offers help with #3888. Wait for the maintainer's answer before opening any PR |
 
 ---
 
