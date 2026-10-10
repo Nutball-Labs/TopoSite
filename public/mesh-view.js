@@ -107,6 +107,71 @@ export function autoLayout(nodes, size = 1000) {
 }
 
 /**
+ * Network Graph layout (MAPS.md step 4): force-directed, like Z-Wave JS UI's mesh
+ * graph. The controller is pinned in the centre; route hops (LWR strongly,
+ * NLWR weakly) pull nodes together, every pair pushes apart, and known neighbor
+ * links add a faint pull. Seeded from autoLayout and run for a fixed number of
+ * steps, so the same mesh always gives the same picture (no jumping on refresh).
+ * Returns Map(id → [y, x]) inside a size × size square.
+ */
+export function forceLayout(nodes, size = 1000, { iterations = 300 } = {}) {
+    const seed = autoLayout(nodes, size)
+    const ids = nodes.map((n) => n.id)
+    const index = new Map(ids.map((id, i) => [id, i]))
+    const P = ids.map((id) => [...(seed.get(id) ?? [size / 2, size / 2])])
+    const controller = nodes.find((n) => n.role === 'controller')
+    const pinned = controller ? index.get(controller.id) : -1
+    const springs = []
+    for (const l of buildLinks(nodes)) {
+        const a = index.get(l.a)
+        const b = index.get(l.b)
+        if (a === undefined || b === undefined) continue
+        const strength = l.kind === 'lwr' ? 0.08 : l.kind === 'nlwr' ? 0.02 : l.kind === 'neighbor' ? 0.004 : 0
+        if (strength) springs.push([a, b, strength])
+    }
+    const rest = size / Math.max(6, Math.sqrt(nodes.length) * 2.2)
+    const repel = rest * rest * 0.9
+    const margin = size * 0.04
+    for (let it = 0; it < iterations; it++) {
+        const cool = 1 - it / iterations
+        const F = P.map(() => [0, 0])
+        for (let i = 0; i < P.length; i++) {
+            for (let j = i + 1; j < P.length; j++) {
+                let dy = P[i][0] - P[j][0]
+                let dx = P[i][1] - P[j][1]
+                let d2 = dx * dx + dy * dy
+                if (d2 < 1) { dy = (i - j) * 0.5; dx = 0.5; d2 = 1 }   // deterministic nudge apart
+                const f = repel / d2
+                const d = Math.sqrt(d2)
+                F[i][0] += (dy / d) * f; F[i][1] += (dx / d) * f
+                F[j][0] -= (dy / d) * f; F[j][1] -= (dx / d) * f
+            }
+        }
+        for (const [a, b, k] of springs) {
+            const dy = P[b][0] - P[a][0]
+            const dx = P[b][1] - P[a][1]
+            const d = Math.sqrt(dx * dx + dy * dy) || 1
+            const f = k * (d - rest)
+            F[a][0] += (dy / d) * f; F[a][1] += (dx / d) * f
+            F[b][0] -= (dy / d) * f; F[b][1] -= (dx / d) * f
+        }
+        const maxStep = rest * 0.5 * cool + 0.5
+        for (let i = 0; i < P.length; i++) {
+            if (i === pinned) continue
+            // a gentle pull to the centre keeps disconnected nodes on the canvas
+            F[i][0] += (size / 2 - P[i][0]) * 0.002
+            F[i][1] += (size / 2 - P[i][1]) * 0.002
+            const m = Math.hypot(F[i][0], F[i][1])
+            const step = m > maxStep ? maxStep / m : 1
+            P[i][0] = Math.min(size - margin, Math.max(margin, P[i][0] + F[i][0] * step))
+            P[i][1] = Math.min(size - margin, Math.max(margin, P[i][1] + F[i][1] * step))
+        }
+    }
+    if (pinned >= 0) P[pinned] = [size / 2, size / 2]
+    return new Map(ids.map((id, i) => [id, P[i]]))
+}
+
+/**
  * Break a route into hop segments the way Z-Wave JS UI does: controller →
  * repeaters[0] → … → node. Segment i is labeled with rssi (i = 0) or
  * repeaterRSSI[i - 1].

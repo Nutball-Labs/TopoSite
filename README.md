@@ -96,7 +96,8 @@ its left edge to resize) has:
   failed hop, very weak signal) or a warning (amber: few neighbors, weak signal,
   running on its backup route, no route data yet). Click one to jump to it. On
   the map these show as rings around nodes, a "!" on weak route hops, and dotted
-  lines for one-way neighbor entries (Layers… ▸ Mesh health). Neighbor counts are
+  lines for one-way neighbor entries. Mesh health is a layer: Layers… ▸ Mesh
+  health turns the markings and this list off and on together. Neighbor counts are
   only judged after **Refresh neighbors** has filled most neighbor tables.
 - **Legend**: shows or hides the legend.
 
@@ -117,7 +118,7 @@ to Z-Wave JS UI in the same browser first.
 Network Graph and your own maps: backgrounds (light and dark), dragging nodes
 into place, export/import, neighbor refresh. Each map has its own node
 list, a default map opens on load, and changes happen in edit mode. Hidden repeaters on shown
-routes appear as ghosts. Next: the live Network Graph layout (see `MAPS.md`).
+routes appear as ghosts. 
 
 ---
 

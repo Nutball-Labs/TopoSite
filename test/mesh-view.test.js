@@ -2,7 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { autoLayout, buildLinks, mapView, meshHealth, nodeColor, routeSegments, rssiLabel, nodeLabel } from '../public/mesh-view.js'
+import { autoLayout, buildLinks, forceLayout, mapView, meshHealth, nodeColor, routeSegments, rssiLabel, nodeLabel } from '../public/mesh-view.js'
 
 // Shaped like /toposite/api/nodes output; values from a live 11.24.2 mesh (2026-10-09).
 const route = (repeaters, rssi, repeaterRSSI, rate, failedBetween = null) =>
@@ -121,6 +121,18 @@ test('mesh health: isolated, few neighbors, weak hops, backup-only, failed hops,
     assert.deepEqual(h2.nodes.get(3), { level: 'warn', reasons: ['Only 1 neighbor'] })
     assert.ok(h2.nodes.get(5).reasons.includes('No route statistics yet'))
     assert.deepEqual(h2.oneWay, [{ from: 2, to: 3 }])
+})
+
+test('network graph layout: controller centred, deterministic, on the canvas, route neighbors closer than strangers', () => {
+    const a = forceLayout(NODES, 1000)
+    const b = forceLayout(NODES, 1000)
+    assert.deepEqual([...a], [...b], 'same mesh, same picture')
+    assert.deepEqual(a.get(1), [500, 500])
+    for (const [y, x] of a.values()) assert.ok(y >= 0 && y <= 1000 && x >= 0 && x <= 1000)
+    const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1])
+    assert.ok(dist(a.get(3), a.get(2)) < dist(a.get(3), a.get(75)), '3 routes via 2, nothing ties it to the dead node 75')
+    const seen = new Set([...a.values()].map(([y, x]) => `${Math.round(y)},${Math.round(x)}`))
+    assert.equal(seen.size, NODES.length, 'no two nodes on the same spot')
 })
 
 // SN: 00001

@@ -8,8 +8,8 @@
 // or hidden, dragged into place on a placed map (positions saved inside the map, in
 // canvas pixels), and dragged in from the "Not placed yet" tray — a shown node with
 // no position on a placed map waits there instead of being drawn. The built-in
-// Network Graph map (layout "graph") is laid out automatically — the live graph
-// layout comes in MAPS.md step 4; until then it uses a simple auto-layout.
+// Network Graph map (layout "graph") is laid out automatically by a force-directed
+// layout (mesh-view.js forceLayout) recomputed from the live routes.
 //
 // Backgrounds are images the user supplies (light, and optionally a dark version).
 //
@@ -21,7 +21,7 @@
 // the radio briefly paused.
 
 import {
-    autoLayout, mapView, meshHealth, HEALTH_COLORS, nodeColor, nodeLabel, mainRoute, rateColor, rateLabel,
+    forceLayout, mapView, meshHealth, HEALTH_COLORS, nodeColor, nodeLabel, mainRoute, rateColor, rateLabel,
     rssiLabel, HOP_LEGEND, RATE_LEGEND,
 } from './mesh-view.js'
 
@@ -200,10 +200,21 @@ async function draw() {
             else if (isShown(cur, n)) unplaced.push(n)
         }
     } else {
-        const side = Math.min(width, height) * 0.9
-        const auto = autoLayout(shown, side)
+        // Network Graph: lay out the shown nodes plus the repeaters on their routes
+        // (hidden ones then show as ghosts in their proper place)
+        const ids = new Set(shown.map((n) => n.id))
+        const controllerId = state.nodes.find((n) => n.role === 'controller')?.id
         for (const n of shown) {
-            const [y, x] = auto.get(n.id) ?? [side / 2, side / 2]
+            for (const r of [n.lwr, n.nlwr]) {
+                if (!r) continue
+                for (const id of [controllerId, ...r.repeaters]) if (id != null) ids.add(id)
+            }
+        }
+        const graphNodes = state.nodes.filter((n) => ids.has(n.id))
+        const side = Math.min(width, height) * 0.9
+        const laid = forceLayout(graphNodes, side)
+        for (const n of graphNodes) {
+            const [y, x] = laid.get(n.id)
             positioned.set(n.id, [y + (height - side) / 2, x + (width - side) / 2])
         }
     }
@@ -1001,7 +1012,7 @@ function addPanel() {
                     title="Asks Z-Wave JS UI to re-read every node's neighbor list from the controller. The radio pauses for a few seconds; allowed once a minute.">Refresh neighbors</button>
                 <div class="muted" id="ts-status"></div>
 
-                <section class="ts-health" aria-label="Mesh health">
+                <section class="ts-health" id="ts-healthsec" aria-label="Mesh health">
                     <h2>Mesh health <span class="muted" id="ts-healthsum"></span></h2>
                     <ul id="ts-healthlist"></ul>
                 </section>
@@ -1030,7 +1041,7 @@ function addPanel() {
                 </section>`
             L.DomEvent.disableClickPropagation(div)
             L.DomEvent.disableScrollPropagation(div)
-            els = Object.fromEntries(['healthsum', 'healthlist', 'summary', 'plan', 'edit', 'setdef', 'editsec', 'nodelist', 'nfilter', 'qloc', 'traysec', 'trayhint', 'tray',
+            els = Object.fromEntries(['healthsec', 'healthsum', 'healthlist', 'summary', 'plan', 'edit', 'setdef', 'editsec', 'nodelist', 'nfilter', 'qloc', 'traysec', 'trayhint', 'tray',
                 'mapmenu', 'mapitems', 'new', 'rename', 'del', 'export', 'import', 'importfile',
                 'nameform', 'name', 'nameok', 'namecancel', 'bgmenu', 'bgitems', 'bg', 'bgdark', 'bgdel', 'bgfile', 'bgdarkfile',
                 'refresh', 'status'].map((k) => [k, div.querySelector(`#ts-${k}`)]))
@@ -1128,6 +1139,10 @@ function addPanel() {
             })
 
             els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
+            // Mesh health is one layer: the pane list shows and hides with the map markings
+            const syncHealth = () => { els.healthsec.hidden = !map.hasLayer(layers.health) }
+            map.on('layeradd layerremove', (e) => { if (e.layer === layers.health) syncHealth() })
+            syncHealth()
             // Mesh health list: click a node to jump to it
             els.healthlist.addEventListener('click', (e) => {
                 const li = e.target.closest('[data-y]')

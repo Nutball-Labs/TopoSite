@@ -245,7 +245,11 @@ reads version 2 only and refuses any other `layout.json` without touching it.
    repeater still in the tray is drawn as an approximate ghost too; ghosts on
    backup routes live in the backup-routes layer; a ghost with no positioned
    node on one side of it can't be placed, so those segments are skipped.
-4. **Network Graph**: live layout as the built-in default.
+4. **Network Graph**: live layout as the built-in default. *Done 2026-10-10* (`forceLayout()` in
+   `public/mesh-view.js`): force-directed, controller pinned in the centre, LWR
+   hops pull strongly, NLWR weakly, neighbors faintly; seeded from the old
+   auto-layout and run a fixed number of steps so it's the same on every
+   refresh. Lays out the shown nodes plus the repeaters on their routes.
 5. **Background library**: reuse, replace with keep/clear positions,
    delete-if-unused.
 6. **Import / export**: one map per file, reviewed matching, placeholders,
