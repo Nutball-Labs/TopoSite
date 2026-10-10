@@ -2,7 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { autoLayout, buildLinks, mapView, nodeColor, routeSegments, rssiLabel, nodeLabel } from '../public/mesh-view.js'
+import { autoLayout, buildLinks, mapView, meshHealth, nodeColor, routeSegments, rssiLabel, nodeLabel } from '../public/mesh-view.js'
 
 // Shaped like /toposite/api/nodes output; values from a live 11.24.2 mesh (2026-10-09).
 const route = (repeaters, rssi, repeaterRSSI, rate, failedBetween = null) =>
@@ -96,6 +96,31 @@ test('map view: hidden repeaters on shown routes become ghosts; links and neighb
     // Can't place a ghost with no positioned anchor on one side: its segments are skipped
     const v4 = mapView(NODES, new Set([59]), new Map([[59, [0, 400]]]))
     assert.deepEqual([v4.ghosts.length, v4.links.length], [0, 0])
+})
+
+test('mesh health: isolated, few neighbors, weak hops, backup-only, failed hops, one-way links', () => {
+    const h = meshHealth(NODES)
+    const f = (id) => h.nodes.get(id)
+    // Neighbor tables are known for 2 of 7 nodes — too few to judge neighbor counts
+    assert.ok(!f(59)?.reasons.some((r) => /neighbor/i.test(r)))
+    assert.deepEqual(f(78), { level: 'bad', reasons: ['Failed hop 2 → 78', 'Weak signal on its route'] })
+    assert.equal(f(68).reasons[0], 'Running on its backup route (no last working route)')
+    assert.equal(f(75), undefined, 'dead is already shown by color, and dead nodes have no route to judge')
+    assert.deepEqual(h.hops.map((x) => [x.a, x.b, x.level]), [[1, 2, 'warn'], [2, 78, 'bad']])
+    assert.deepEqual(h.oneWay, [], 'node 2 lists 1, but 1 has no table to compare')
+
+    const mesh = [
+        node(1, { role: 'controller', neighbors: [2, 3] }),
+        node(2, { lwr: route([], -60, [], 3), neighbors: [1, 3] }),
+        node(3, { lwr: route([], -60, [], 3), neighbors: [1] }),   // 2 lists 3, 3 doesn't list 2
+        node(4, { lwr: route([], -60, [], 3), neighbors: [] }),
+        node(5, {}),
+    ]
+    const h2 = meshHealth(mesh)
+    assert.deepEqual(h2.nodes.get(4), { level: 'bad', reasons: ['Isolated — no neighbors'] })
+    assert.deepEqual(h2.nodes.get(3), { level: 'warn', reasons: ['Only 1 neighbor'] })
+    assert.ok(h2.nodes.get(5).reasons.includes('No route statistics yet'))
+    assert.deepEqual(h2.oneWay, [{ from: 2, to: 3 }])
 })
 
 // SN: 00001

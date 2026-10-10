@@ -226,7 +226,10 @@ SNs, bump version, commit, and push.
   auth is off, exactly like Z-Wave JS UI itself. No separate TopoSite users.
 - **Mesh health is core scope.** Link styling must flag problems (weak or
   one-way links, nodes with too few neighbors, dead/isolated nodes).
-  Exact styling is decided after the user reviews a rendered map.
+  First pass built 2026-10-10 (`meshHealth()` in `mesh-view.js`, thresholds in
+  `HEALTH`): amber/red rings around nodes, "!" badges on weak LWR hops (≤ −85 /
+  −95 dBm), dotted amber lines for one-way neighbor entries, and a pane list.
+  Styling and thresholds get tuned after the user reviews it on the real mesh.
 - **Node icons show power source**, following Z-Wave JS UI's visual language below.
 - **License:** GPLv3 (plugin is a separate package; Z-Wave JS UI is MIT).
 

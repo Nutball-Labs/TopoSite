@@ -92,6 +92,12 @@ its left edge to resize) has:
   when the background changes. A new map's first image sets its size.
 - **Refresh neighbors**: asks Z-Wave JS UI to re-read every node's neighbor
   list (the radio pauses for a few seconds; once a minute at most).
+- **Mesh health**: every node on this map with a problem (red: isolated, a
+  failed hop, very weak signal) or a warning (amber: few neighbors, weak signal,
+  running on its backup route, no route data yet). Click one to jump to it. On
+  the map these show as rings around nodes, a "!" on weak route hops, and dotted
+  lines for one-way neighbor entries (Layers… ▸ Mesh health). Neighbor counts are
+  only judged after **Refresh neighbors** has filled most neighbor tables.
 - **Legend**: shows or hides the legend.
 
 On the map: **Layers…** (top right) toggles routes, backup routes, neighbors

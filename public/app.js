@@ -21,7 +21,7 @@
 // the radio briefly paused.
 
 import {
-    autoLayout, mapView, nodeColor, nodeLabel, mainRoute, rateColor, rateLabel,
+    autoLayout, mapView, meshHealth, HEALTH_COLORS, nodeColor, nodeLabel, mainRoute, rateColor, rateLabel,
     rssiLabel, HOP_LEGEND, RATE_LEGEND,
 } from './mesh-view.js'
 
@@ -47,12 +47,14 @@ const layers = {
     nlwr: L.layerGroup(),
     neighbors: L.layerGroup().addTo(map),
     nodes: L.layerGroup().addTo(map),
+    health: L.layerGroup().addTo(map),
 }
 const LAYER_CHOICES = [
     ['Routes (last working)', layers.routes],
     ['Backup routes (next-to-last)', layers.nlwr],
     ['Neighbors (when known)', layers.neighbors],
     ['Nodes', layers.nodes],
+    ['Mesh health', layers.health],
 ]
 addLayersButton()
 
@@ -213,6 +215,7 @@ async function draw() {
     drawGhosts(view.ghosts)
     hintPlacing(plan, placed, unplaced)
     drawNodes(nodePos, plan, height)
+    drawHealth(shown, nodePos, view.pos)
     drawPlaceholders(plan, height)
     panel.setEdit(cur, unplaced)
 }
@@ -300,6 +303,47 @@ function drawGhosts(ghosts) {
                 ` so it's ${where}.`, { direction: 'top', offset: [0, -8] })
             .addTo(g.kind === 'lwr' ? layers.routes : layers.nlwr)
     }
+}
+
+/**
+ * Mesh health (mesh-view.js meshHealth): a ring around flagged nodes, a "!" on
+ * weak route hops, dotted lines for one-way neighbor entries. These avoid the
+ * colors and line styles Z-Wave JS UI already gives meaning to. The pane lists
+ * every flagged node shown on this map; clicking one jumps to it.
+ */
+function drawHealth(shown, nodePos, allPos) {
+    layers.health.clearLayers()
+    const h = meshHealth(state.nodes)
+    const byId = new Map(state.nodes.map((n) => [n.id, n]))
+    const name = (id) => esc(byId.get(id)?.name ?? `NodeID ${id}`)
+    for (const [id, f] of h.nodes) {
+        const p = nodePos.get(id)
+        if (!p) continue
+        L.circleMarker(p, { radius: 17, color: HEALTH_COLORS[f.level], weight: 3, fill: false, interactive: false }).addTo(layers.health)
+    }
+    for (const hop of h.hops) {
+        if (hop.kind !== 'lwr') continue
+        const a = allPos.get(hop.a)
+        const b = allPos.get(hop.b)
+        if (!a || !b) continue
+        L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], {
+            keyboard: false,
+            icon: L.divIcon({ className: `ts-hopwarn ts-${hop.level}`, iconSize: [16, 16], iconAnchor: [8, 8], html: '!' }),
+        }).bindTooltip(`${hop.level === 'bad' ? 'Very weak' : 'Weak'} hop ${name(hop.a)} ↔ ${name(hop.b)}: ${esc(rssiLabel(hop.rssi))}`, { direction: 'top' })
+            .addTo(layers.health)
+    }
+    for (const w of h.oneWay) {
+        const a = nodePos.get(w.from)
+        const b = nodePos.get(w.to)
+        if (!a || !b) continue
+        L.polyline([a, b], { color: HEALTH_COLORS.warn, weight: 2, dashArray: '1 6', lineCap: 'round' })
+            .bindTooltip(`One-way: ${name(w.from)} lists ${name(w.to)} as a neighbor, but not the other way round`, { sticky: true })
+            .addTo(layers.health)
+    }
+    const listed = [...h.nodes].filter(([id]) => shown.some((n) => n.id === id))
+        .sort(([, a], [, b]) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1))
+    panel.setHealth(listed.map(([id, f]) => ({ id, name: byId.get(id) ? nodeLabel(byId.get(id)) : `NodeID ${id}`, ...f, pos: nodePos.get(id) ?? allPos.get(id) })),
+        h.oneWay.filter((w) => nodePos.has(w.from) && nodePos.has(w.to)).length)
 }
 
 /** Save node n's position on a placed map (canvas px, y down). */
@@ -957,6 +1001,11 @@ function addPanel() {
                     title="Asks Z-Wave JS UI to re-read every node's neighbor list from the controller. The radio pauses for a few seconds; allowed once a minute.">Refresh neighbors</button>
                 <div class="muted" id="ts-status"></div>
 
+                <section class="ts-health" aria-label="Mesh health">
+                    <h2>Mesh health <span class="muted" id="ts-healthsum"></span></h2>
+                    <ul id="ts-healthlist"></ul>
+                </section>
+
                 <section id="ts-editsec" hidden aria-label="Edit this map">
                     <h2>Nodes on this map</h2>
                     <div class="ts-rule" role="radiogroup" aria-label="Starting rule">
@@ -981,7 +1030,7 @@ function addPanel() {
                 </section>`
             L.DomEvent.disableClickPropagation(div)
             L.DomEvent.disableScrollPropagation(div)
-            els = Object.fromEntries(['summary', 'plan', 'edit', 'setdef', 'editsec', 'nodelist', 'nfilter', 'qloc', 'traysec', 'trayhint', 'tray',
+            els = Object.fromEntries(['healthsum', 'healthlist', 'summary', 'plan', 'edit', 'setdef', 'editsec', 'nodelist', 'nfilter', 'qloc', 'traysec', 'trayhint', 'tray',
                 'mapmenu', 'mapitems', 'new', 'rename', 'del', 'export', 'import', 'importfile',
                 'nameform', 'name', 'nameok', 'namecancel', 'bgmenu', 'bgitems', 'bg', 'bgdark', 'bgdel', 'bgfile', 'bgdarkfile',
                 'refresh', 'status'].map((k) => [k, div.querySelector(`#ts-${k}`)]))
@@ -1079,6 +1128,11 @@ function addPanel() {
             })
 
             els.refresh.addEventListener('click', () => refreshNeighbors(els.refresh))
+            // Mesh health list: click a node to jump to it
+            els.healthlist.addEventListener('click', (e) => {
+                const li = e.target.closest('[data-y]')
+                if (li) map.setView([Number(li.dataset.y), Number(li.dataset.x)], Math.max(map.getZoom(), state.labelZoom))
+            })
 
             // Node list: ticking shows a node on this map, unticking hides it
             els.nodelist.addEventListener('change', (e) => {
@@ -1158,6 +1212,15 @@ function addPanel() {
             els.plan.innerHTML = maps.map((m) => `<option value="${esc(m.id)}">${m.id === defaultId ? '★ ' : ''}${esc(m.name)}${
                 m.layout === 'graph' ? ' (automatic layout)' : ` (${count(m)} placed)`}</option>`).join('')
             if (selectedId) els.plan.value = selectedId
+        },
+        setHealth(items, oneWay) {
+            const bad = items.filter((i) => i.level === 'bad').length
+            els.healthsum.textContent = items.length || oneWay
+                ? `— ${bad} problem${bad === 1 ? '' : 's'}, ${items.length - bad} warning${items.length - bad === 1 ? '' : 's'}${oneWay ? `, ${oneWay} one-way` : ''}`
+                : '— nothing flagged'
+            els.healthlist.innerHTML = items.map((i) => `<li${i.pos ? ` data-y="${i.pos[0]}" data-x="${i.pos[1]}" title="Show on the map"` : ' title="Not on this map"'}>
+                <span class="ts-dot" style="background:${HEALTH_COLORS[i.level]}"></span>
+                <span><b>${esc(i.name)}</b> <span class="muted">${i.reasons.map(esc).join(' · ')}</span></span></li>`).join('')
         },
         /** Edit sections: the map's node list and, on a placed map, the unplaced tray. */
         setEdit(m, unplaced) {
@@ -1313,6 +1376,11 @@ function addLegend() {
                 <h2>Link color = data rate</h2>${RATE_LEGEND.map(([t, c]) => `<div><span class="ln" style="border-color:${c}"></span>${t}</div>`).join('')}
                 <div><span class="ln" style="border-top-style:dashed;border-color:#888"></span>backup route</div>
                 <div><span class="ts-gsw"></span>repeater hidden or not placed on this map</div>
+                <h2>Mesh health</h2>
+                <div><span class="ts-ring" style="border-color:${HEALTH_COLORS.bad}"></span>problem (isolated, failed hop, very weak signal)</div>
+                <div><span class="ts-ring" style="border-color:${HEALTH_COLORS.warn}"></span>warning (few neighbors, weak signal, backup route)</div>
+                <div><span class="ts-hopwarn ts-warn ts-inline">!</span>weak hop on a route</div>
+                <div><span class="ln" style="border-top-style:dotted;border-color:${HEALTH_COLORS.warn}"></span>one-way neighbor entry</div>
                 <div><span class="ts-gsw ts-gsw-approx"></span>…at an approximate spot</div>
                 </div>`
             const btn = div.querySelector('.ts-legend-toggle')

@@ -237,4 +237,78 @@ export function mapView(nodes, shown, positioned) {
     return { links: [...links.values()], ghosts: [...ghosts.values()], pos }
 }
 
+// Mesh-health thresholds — first guesses, to be tuned by eye on a real mesh
+export const HEALTH = {
+    weakRssi: -85,       // dBm: a route hop at or below this is weak
+    veryWeakRssi: -95,   // dBm: …and at or below this, very weak (as is 'no-signal')
+    fewNeighbors: 2,     // a node with fewer neighbors than this has little to route through
+}
+export const HEALTH_COLORS = { warn: '#ff9800', bad: '#e53935' }
+
+/**
+ * Mesh-health flags (CLAUDE.md: "Mesh health is core scope"). Pure, from
+ * /api/nodes data:
+ *   nodes: Map(id → {level: 'warn'|'bad', reasons: [text]})
+ *     bad:  no neighbors at all (isolated); a failed hop on its route
+ *     warn: fewer than HEALTH.fewNeighbors neighbors; no route statistics;
+ *           its main route has a weak hop; running on a backup route only
+ *     Neighbor counts are only judged once neighbor tables are known for most
+ *     of the mesh (they're a cache that's empty until refreshed).
+ *     Dead/failed status is already shown by the node color, so it isn't repeated.
+ *   hops: [{a, b, level, rssi}] — weak route hops (LWR, and NLWR as kind 'nlwr')
+ *   oneWay: [{from, to}] — `from` lists `to` as a neighbor but not the other way
+ *     round (both tables known)
+ */
+export function meshHealth(nodes) {
+    const controller = nodes.find((n) => n.role === 'controller')
+    const cid = controller?.id ?? 1
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+    const known = nodes.filter((n) => n.neighbors?.length).length
+    const tablesKnown = nodes.length > 1 && known >= (nodes.length - 1) / 2
+    const flags = new Map()
+    const flag = (id, level, reason) => {
+        const f = flags.get(id) ?? { level, reasons: [] }
+        if (level === 'bad') f.level = 'bad'
+        f.reasons.push(reason)
+        flags.set(id, f)
+    }
+    const hopLevel = (rssi) => (rssi === 'no-signal' || (typeof rssi === 'number' && rssi <= HEALTH.veryWeakRssi)) ? 'bad'
+        : typeof rssi === 'number' && rssi <= HEALTH.weakRssi ? 'warn' : null
+    const hops = new Map()
+    for (const n of nodes) {
+        if (n.role === 'controller') continue
+        if (tablesKnown && n.status === 'ok') {
+            const count = n.neighbors?.length ?? 0
+            if (count === 0) flag(n.id, 'bad', 'Isolated — no neighbors')
+            else if (count < HEALTH.fewNeighbors) flag(n.id, 'warn', `Only ${count} neighbor${count === 1 ? '' : 's'}`)
+        }
+        if (!n.lwr && !n.nlwr) {
+            if (n.status === 'ok') flag(n.id, 'warn', 'No route statistics yet')
+        } else if (!n.lwr) {
+            flag(n.id, 'warn', 'Running on its backup route (no last working route)')
+        }
+        for (const [kind, route] of [['lwr', n.lwr], [n.lwr ? 'nlwr' : 'lwr', n.nlwr]]) {
+            if (!route) continue
+            if (route.failedBetween && kind === 'lwr') flag(n.id, 'bad', `Failed hop ${route.failedBetween.join(' → ')}`)
+            let worst = null
+            for (const s of routeSegments(n, route, cid)) {
+                const level = hopLevel(s.rssi)
+                if (!level) continue
+                const key = `${kind}:${Math.min(s.from, s.to)}-${Math.max(s.from, s.to)}`
+                if (!hops.has(key) || level === 'bad') hops.set(key, { a: s.from, b: s.to, kind, level, rssi: s.rssi })
+                if (worst !== 'bad') worst = level
+            }
+            if (worst && kind === 'lwr') flag(n.id, worst === 'bad' ? 'bad' : 'warn', 'Weak signal on its route')
+        }
+    }
+    const oneWay = []
+    for (const n of nodes) {
+        for (const nb of n.neighbors ?? []) {
+            const other = byId.get(nb)
+            if (other?.neighbors?.length && !other.neighbors.includes(n.id)) oneWay.push({ from: n.id, to: nb })
+        }
+    }
+    return { nodes: flags, hops: [...hops.values()], oneWay }
+}
+
 // SN: 00001
