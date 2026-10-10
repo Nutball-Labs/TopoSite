@@ -79,6 +79,8 @@ its left edge to resize) has:
   - **Not placed yet**: shown nodes with no position on this map. Drag one onto
     the map, or click it to drop it in the middle of the view.
   - Drag nodes to move them; **right-click** a node for Unplace or Hide on this map.
+  - The zoom, position and layers you leave the map on are saved with it and
+    come back next time it's opened (outside edit mode, moving around is temporary).
 - **Map ▾**: **New…** (name; background — none, one you already have, or
   upload; include all or exclude all; optionally copy node positions from a
   map on the same background), **Rename…**, **Set as default**, **Delete**

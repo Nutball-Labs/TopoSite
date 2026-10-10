@@ -239,7 +239,8 @@ reads version 2 only and refuses any other `layout.json` without touching it.
    default map opens on every load (the last-viewed map is no longer
    remembered). Quick selects replace the shown set; switching the starting
    rule keeps what's shown. Edit mode starts off on each visit. Saving the view
-   (zoom, centre, layers) per map is not built yet.
+   (zoom, centre, layers) per map was added afterwards: changes made in edit
+   mode are saved; in view mode they're temporary.
 3. **Rendering rules**: filtering, ghost repeaters, link rules. *Done 2026-10-10* (`mapView()` in
    `public/mesh-view.js`). As built: only shown nodes' routes are drawn; a shown
    repeater still in the tray is drawn as an approximate ghost too; ghosts on

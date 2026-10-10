@@ -56,6 +56,9 @@ const LAYER_CHOICES = [
     ['Nodes', layers.nodes],
     ['Mesh health', layers.health],
 ]
+// view.layers keys saved with each map (lib/layout.js DEFAULT_LAYERS) → layer groups
+const VIEW_LAYERS = { routes: layers.routes, backupRoutes: layers.nlwr, neighbors: layers.neighbors, nodes: layers.nodes, health: layers.health }
+const VIEW_DEFAULTS = { routes: true, backupRoutes: false, neighbors: true, nodes: true, health: true, battery: false }
 addLayersButton()
 
 const state = {
@@ -69,6 +72,11 @@ const state = {
 }
 
 const panel = addPanel()
+// While editing, pans, zooms and layer changes are saved as the map's view
+map.on('moveend layeradd layerremove', (e) => {
+    if (e.type !== 'moveend' && !Object.values(VIEW_LAYERS).includes(e.layer)) return
+    saveViewSoon()
+})
 addLegend()
 setupPane()
 map.on('zoomend', applyLabelZoom)
@@ -176,9 +184,18 @@ async function draw() {
         L.imageOverlay(gridImage(width, height), bounds, { opacity: 0.6, pane: 'ts-background' }).addTo(layers.background)
     }
     if (state.shownMapId !== (cur?.id ?? null)) {
+        // A newly opened map: its saved view (zoom, centre, layers), else fit it
         state.shownMapId = cur?.id ?? null
-        map.fitBounds(bounds, { padding: [20, 20] })
-        state.labelZoom = map.getZoom() + 0.75
+        state.applyingView = true
+        const v = cur?.view ?? {}
+        if (Array.isArray(v.center) && typeof v.zoom === 'number') map.setView(v.center, v.zoom, { animate: false })
+        else map.fitBounds(bounds, { padding: [20, 20], animate: false })
+        for (const [k, layer] of Object.entries(VIEW_LAYERS)) {
+            if (v.layers?.[k] ?? VIEW_DEFAULTS[k]) layer.addTo(map)
+            else map.removeLayer(layer)
+        }
+        state.applyingView = false
+        state.labelZoom = map.getBoundsZoom(bounds, false, L.point(40, 40)) + 0.75
         applyLabelZoom()
     }
 
@@ -355,6 +372,26 @@ function drawHealth(shown, nodePos, allPos) {
         .sort(([, a], [, b]) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1))
     panel.setHealth(listed.map(([id, f]) => ({ id, name: byId.get(id) ? nodeLabel(byId.get(id)) : `NodeID ${id}`, ...f, pos: nodePos.get(id) ?? allPos.get(id) })),
         h.oneWay.filter((w) => nodePos.has(w.from) && nodePos.has(w.to)).length)
+}
+
+let saveViewTimer = 0
+/** Save the current zoom, centre and layers with the map — only in edit mode. */
+function saveViewSoon() {
+    if (!state.edit || state.applyingView) return
+    const m = currentMap()
+    if (!m) return
+    clearTimeout(saveViewTimer)
+    saveViewTimer = setTimeout(async () => {
+        const c = map.getCenter()
+        const view = { center: [c.lat, c.lng], zoom: map.getZoom(), layers: { ...VIEW_DEFAULTS, ...m.view?.layers } }
+        for (const [k, layer] of Object.entries(VIEW_LAYERS)) view.layers[k] = map.hasLayer(layer)
+        try {
+            await api(`maps/${m.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ view }) })
+            m.view = view // keep the local copy current; the next poll brings the same
+        } catch (error) {
+            panel.setStatus(explain(error, "Couldn't save the map's view"))
+        }
+    }, 800)
 }
 
 /** Save node n's position on a placed map (canvas px, y down). */
@@ -1018,6 +1055,7 @@ function addPanel() {
                 </section>
 
                 <section id="ts-editsec" hidden aria-label="Edit this map">
+                    <div class="muted">While editing, the zoom, position and layers you leave the map on are saved with it.</div>
                     <h2>Nodes on this map</h2>
                     <div class="ts-rule" role="radiogroup" aria-label="Starting rule">
                         <label title="Every node is shown except the unticked ones; nodes added to Z-Wave later appear"><input type="radio" name="ts-start" value="include"> Include all</label>
