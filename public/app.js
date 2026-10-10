@@ -27,7 +27,6 @@ const POLL_MS = 30_000
 const REFRESH_COOLDOWN_MS = 60_000
 const PLAN_KEY = 'toposite.plan'
 const PANE_KEY = 'toposite.paneWidth'
-const LEGEND_KEY = 'toposite.legend'
 // Z-Wave JS UI's root, as the browser sees it (keeps working behind a path prefix)
 const ZUI_BASE = location.pathname.replace(/toposite\/.*$/, '')
 const LOGIN_LINK = `<a href="${ZUI_BASE}" target="_blank">log in to Z-Wave JS UI</a>`
@@ -707,8 +706,8 @@ function addLegend() {
         onAdd() {
             const div = L.DomUtil.create('div', 'ts-panel ts-legend')
             const shapes = [['★', 'Controller'], ['⬢', 'Mains (repeats)'], ['■', 'Battery (sleeps)']]
-            // Collapsed by default (user, 2026-10-10); the choice is remembered per browser
-            const open = readPref(LEGEND_KEY) === 'open'
+            // Always starts hidden; not remembered between visits (user, 2026-10-10)
+            const open = false
             div.innerHTML = `<button type="button" class="ts-legend-toggle" aria-expanded="${open}" aria-controls="ts-legend-body"
                     title="Show or hide the legend">Legend</button>
                 <div id="ts-legend-body"${open ? '' : ' hidden'}>
@@ -724,7 +723,6 @@ function addLegend() {
                 const nowOpen = body.hidden
                 body.hidden = !nowOpen
                 btn.setAttribute('aria-expanded', nowOpen)
-                writePref(LEGEND_KEY, nowOpen ? 'open' : 'closed')
             })
             return div
         },
