@@ -72,6 +72,12 @@
     .ts-legend .sw { width: 1em; height: 1em; border-radius: 0.15em; flex: none; }
     .ts-legend .ln { width: 1.5em; height: 0; border-top: 0.25em solid; flex: none; }
     .ts-legend h2 { font-size: 1em; margin: 0.5em 0 0.15em; }
+    .ts-legend-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between;
+        font: 600 1.1em/1.2 system-ui, sans-serif; color: var(--text); background: none; border: none;
+        padding: 0; cursor: pointer; }
+    .ts-legend-toggle .ts-arrow { font-size: 1.8em; line-height: 1; color: var(--muted); }
+    .ts-legend-toggle:hover .ts-arrow, .ts-legend-toggle:focus-visible .ts-arrow { color: var(--text); }
+    #ts-legend-body { margin-top: 0.3em; }
 
     .ts-node { overflow: visible; }
     .ts-node svg { overflow: visible; }

@@ -27,6 +27,7 @@ const POLL_MS = 30_000
 const REFRESH_COOLDOWN_MS = 60_000
 const PLAN_KEY = 'toposite.plan'
 const PANE_KEY = 'toposite.paneWidth'
+const LEGEND_KEY = 'toposite.legend'
 // Z-Wave JS UI's root, as the browser sees it (keeps working behind a path prefix)
 const ZUI_BASE = location.pathname.replace(/toposite\/.*$/, '')
 const LOGIN_LINK = `<a href="${ZUI_BASE}" target="_blank">log in to Z-Wave JS UI</a>`
@@ -706,11 +707,26 @@ function addLegend() {
         onAdd() {
             const div = L.DomUtil.create('div', 'ts-panel ts-legend')
             const shapes = [['★', 'Controller'], ['⬢', 'Mains (repeats)'], ['■', 'Battery (sleeps)']]
-            div.innerHTML = `<h2>Shape</h2>${shapes.map(([s, t]) => `<div><span>${s}</span>${t}</div>`).join('')}
+            // Collapsed by default (user, 2026-10-10); the choice is remembered per browser
+            const open = readPref(LEGEND_KEY) === 'open'
+            div.innerHTML = `<button type="button" class="ts-legend-toggle" aria-expanded="${open}" aria-controls="ts-legend-body">
+                    <span>Legend</span><span class="ts-arrow" aria-hidden="true">${open ? '▲' : '▼'}</span></button>
+                <div id="ts-legend-body"${open ? '' : ' hidden'}>
+                <h2>Shape</h2>${shapes.map(([s, t]) => `<div><span>${s}</span>${t}</div>`).join('')}
                 <h2>Node color = hops</h2>${HOP_LEGEND.map(([t, c]) => `<div><span class="sw" style="background:${c}"></span>${t}</div>`).join('')}
                 <h2>Link color = data rate</h2>${RATE_LEGEND.map(([t, c]) => `<div><span class="ln" style="border-color:${c}"></span>${t}</div>`).join('')}
                 <div><span class="ln" style="border-top-style:dashed;border-color:#888"></span>backup route</div>
-                <div><span class="sw" style="background:#888;opacity:.45"></span>faded = not placed yet</div>`
+                <div><span class="sw" style="background:#888;opacity:.45"></span>faded = not placed yet</div>
+                </div>`
+            const btn = div.querySelector('.ts-legend-toggle')
+            const body = div.querySelector('#ts-legend-body')
+            btn.addEventListener('click', () => {
+                const nowOpen = body.hidden
+                body.hidden = !nowOpen
+                btn.setAttribute('aria-expanded', nowOpen)
+                btn.querySelector('.ts-arrow').textContent = nowOpen ? '▲' : '▼'
+                writePref(LEGEND_KEY, nowOpen ? 'open' : 'closed')
+            })
             return div
         },
     })
