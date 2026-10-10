@@ -76,7 +76,13 @@ The layout should feel like an app, not a debug page.
   - **Edit**: a view/edit toggle; the map is read-only in view mode
   - **Refresh neighbors**
   - the summary (nodes, dead/failed, neighbors known)
-- **Side panel** (collapsible):
+- **Right-hand pane** (user, 2026-10-10): resizable by dragging its left edge
+  or with ← → on the handle. Its contents are sized in em and scale with the
+  pane's width, and the width is remembered per browser. It holds the controls
+  and the legend, and in future the sections below.
+- **Layers…** button on the map's top right (Google Maps style): opens toggles
+  for routes, backup routes, neighbors, nodes and drawing.
+- **Pane sections:**
   - **Maps**: list, **New map…**, rename, **Set as default**, delete (two
     clicks).
   - **Nodes** (edit mode): every node with a show/hide checkbox for this map.

@@ -29,6 +29,7 @@ const GRID_SIZE = 1000
 const POLL_MS = 30_000
 const REFRESH_COOLDOWN_MS = 60_000
 const PLAN_KEY = 'toposite.plan'
+const PANE_KEY = 'toposite.paneWidth'
 const BLANK_SIZE = { widthPx: 3000, heightPx: 2000 }
 const SAVE_DELAY_MS = 800
 // Z-Wave JS UI's root, as the browser sees it (keeps working behind a path prefix)
@@ -57,13 +58,14 @@ const layers = {
     neighbors: L.layerGroup([], IGNORE).addTo(map),
     nodes: L.layerGroup([], IGNORE).addTo(map),
 }
-L.control.layers(null, {
-    'Routes (last working)': layers.routes,
-    'Backup routes (next-to-last)': layers.nlwr,
-    'Neighbors (when known)': layers.neighbors,
-    'Nodes': layers.nodes,
-    'Drawing': layers.drawing,
-}, { collapsed: false, position: 'topright' }).addTo(map)
+const LAYER_CHOICES = [
+    ['Routes (last working)', layers.routes],
+    ['Backup routes (next-to-last)', layers.nlwr],
+    ['Neighbors (when known)', layers.neighbors],
+    ['Nodes', layers.nodes],
+    ['Drawing', layers.drawing],
+]
+addLayersButton()
 
 map.pm.setGlobalOptions({
     layerGroup: layers.drawing,
@@ -93,6 +95,7 @@ const state = {
 
 const panel = addPanel()
 addLegend()
+setupPane()
 map.on('zoomend', applyLabelZoom)
 
 // Theme changed (index.html): drawn shapes take their colour when created, so rebuild them
@@ -739,7 +742,7 @@ function addPanel() {
             return div
         },
     })
-    new Panel({ position: 'topleft' }).addTo(map)
+    paneBody().appendChild(new Panel().onAdd(map))
     return {
         setStatus(html) { els.status.innerHTML = html },
         setDrawing(on) {
@@ -769,6 +772,94 @@ function addPanel() {
     }
 }
 
+/** The right-hand pane (index.html) that holds the controls and the legend. */
+function paneBody() {
+    return document.getElementById('ts-pane')
+}
+
+/**
+ * Resizable right-hand pane: drag the handle on its left edge (or use the arrow
+ * keys on it). Everything in the pane is sized in em, and the pane's font size
+ * follows its width, so the contents scale up and down with it. Width is
+ * remembered per browser.
+ */
+function setupPane() {
+    const pane = paneBody()
+    const handle = document.getElementById('ts-resizer')
+    const MIN = 220
+    const max = () => Math.max(MIN, Math.round(window.innerWidth * 0.6))
+    let width = 0
+    let frame = 0
+    const apply = (w) => {
+        width = Math.round(Math.min(Math.max(w, MIN), max()))
+        pane.style.width = `${width}px`
+        pane.style.fontSize = `${Math.min(Math.max(width / 22, 11), 22).toFixed(1)}px`
+        handle.setAttribute('aria-valuenow', width)
+        cancelAnimationFrame(frame)
+        frame = requestAnimationFrame(() => map.invalidateSize({ pan: false }))
+    }
+    apply(Number(readPref(PANE_KEY)) || 300)
+
+    handle.addEventListener('pointerdown', (e) => {
+        e.preventDefault()
+        handle.setPointerCapture(e.pointerId)
+        handle.classList.add('drag')
+        const startX = e.clientX
+        const startW = width
+        const move = (ev) => apply(startW + (startX - ev.clientX))
+        const up = () => {
+            handle.classList.remove('drag')
+            handle.removeEventListener('pointermove', move)
+            handle.removeEventListener('pointerup', up)
+            writePref(PANE_KEY, width)
+        }
+        handle.addEventListener('pointermove', move)
+        handle.addEventListener('pointerup', up)
+    })
+    handle.addEventListener('keydown', (e) => {
+        const step = e.shiftKey ? 50 : 10
+        if (e.key === 'ArrowLeft') apply(width + step)
+        else if (e.key === 'ArrowRight') apply(width - step)
+        else return
+        e.preventDefault()
+        writePref(PANE_KEY, width)
+    })
+    window.addEventListener('resize', () => apply(width))
+}
+
+/** "Layers…" button on the map (Google Maps style): opens a small list of layer toggles. */
+function addLayersButton() {
+    const Ctl = L.Control.extend({
+        onAdd() {
+            const div = L.DomUtil.create('div', 'ts-layers')
+            div.innerHTML = '<button type="button" class="ts-layers-btn" aria-expanded="false" ' +
+                'title="Choose what\'s drawn on the map">Layers…</button><div class="ts-layers-pop" hidden></div>'
+            const btn = div.querySelector('button')
+            const pop = div.querySelector('.ts-layers-pop')
+            const close = () => { pop.hidden = true; btn.setAttribute('aria-expanded', 'false') }
+            btn.addEventListener('click', () => {
+                if (!pop.hidden) return close()
+                pop.innerHTML = LAYER_CHOICES.map(([label, layer], i) =>
+                    `<label><input type="checkbox" data-i="${i}"${map.hasLayer(layer) ? ' checked' : ''}> ${esc(label)}</label>`).join('')
+                pop.hidden = false
+                btn.setAttribute('aria-expanded', 'true')
+            })
+            pop.addEventListener('change', (e) => {
+                const layer = LAYER_CHOICES[e.target.dataset.i]?.[1]
+                if (!layer) return
+                if (e.target.checked) layer.addTo(map)
+                else map.removeLayer(layer)
+            })
+            document.addEventListener('pointerdown', (e) => { if (!div.contains(e.target)) close() })
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close() })
+            L.DomEvent.disableClickPropagation(div)
+            L.DomEvent.disableScrollPropagation(div)
+            return div
+        },
+    })
+    new Ctl({ position: 'topright' }).addTo(map)
+}
+
 function addLegend() {
     const Legend = L.Control.extend({
         onAdd() {
@@ -782,7 +873,7 @@ function addLegend() {
             return div
         },
     })
-    new Legend({ position: 'bottomleft' }).addTo(map)
+    paneBody().appendChild(new Legend().onAdd(map))
 }
 
 // ---------------------------------------------------------------- helpers

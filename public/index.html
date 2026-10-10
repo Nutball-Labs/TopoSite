@@ -46,17 +46,26 @@
     }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
         font: 14px/1.4 system-ui, sans-serif; }
-    #map { position: absolute; inset: 0; background: var(--bg); }
+    /* Map on the left, resizable controls pane on the right */
+    #ts-app { position: absolute; inset: 0; display: flex; }
+    #map { flex: 1 1 auto; min-width: 0; height: 100%; background: var(--bg); }
+    #ts-resizer { flex: none; width: 6px; cursor: col-resize; background: var(--border); touch-action: none; }
+    #ts-resizer:hover, #ts-resizer:focus-visible, #ts-resizer.drag { background: var(--muted); outline: none; }
+    /* Sized in em throughout: setupPane() sets font-size from the pane's width */
+    #ts-pane { flex: none; width: 300px; height: 100%; overflow-y: auto; background: var(--panel);
+        color: var(--text); font-size: 14px; }
+    #ts-pane .ts-panel { border: none; border-radius: 0; box-shadow: none; padding: 0.8em 1em;
+        border-bottom: 1px solid var(--border); }
 
     .ts-panel { background: var(--panel); color: var(--text); border: 1px solid var(--border);
         border-radius: 6px; padding: 8px 10px; box-shadow: 0 1px 4px rgb(0 0 0 / 20%); }
-    .ts-panel h1 { font-size: 15px; margin: 0 0 4px; }
-    .ts-panel .muted { color: var(--muted); font-size: 12px; }
-    .ts-panel button { font: inherit; padding: 4px 10px; cursor: pointer; }
+    .ts-panel h1 { font-size: 1.1em; margin: 0 0 0.3em; }
+    .ts-panel .muted { color: var(--muted); font-size: 0.86em; }
+    .ts-panel button { font: inherit; padding: 0.3em 0.7em; cursor: pointer; }
     .ts-panel button:disabled { cursor: default; opacity: 0.6; }
-    #ts-status { max-width: 280px; margin-top: 4px; }
-    .ts-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
-    .ts-row select { font: inherit; max-width: 140px; }
+    #ts-status { margin-top: 0.4em; }
+    .ts-row { display: flex; flex-wrap: wrap; gap: 0.45em; align-items: center; margin-top: 0.45em; }
+    .ts-row select { font: inherit; flex: 1 1 8em; min-width: 0; }
     .ts-unplaced { opacity: 0.45; }
     .ts-menu { font-size: 13px; min-width: 160px; }
     .ts-menu-title { font-weight: 600; margin-bottom: 6px; }
@@ -69,11 +78,11 @@
     textarea.pm-textarea.ts-label:focus, .ts-drawing-on textarea.pm-textarea.ts-label { border-color: var(--border); }
     #ts-status a { color: inherit; }
 
-    .ts-legend { font-size: 12px; }
-    .ts-legend div { display: flex; align-items: center; gap: 6px; }
-    .ts-legend .sw { width: 12px; height: 12px; border-radius: 2px; flex: none; }
-    .ts-legend .ln { width: 18px; height: 0; border-top: 3px solid; flex: none; }
-    .ts-legend h2 { font-size: 12px; margin: 6px 0 2px; }
+    .ts-legend { font-size: 0.9em; }
+    .ts-legend div { display: flex; align-items: center; gap: 0.5em; }
+    .ts-legend .sw { width: 1em; height: 1em; border-radius: 0.15em; flex: none; }
+    .ts-legend .ln { width: 1.5em; height: 0; border-top: 0.25em solid; flex: none; }
+    .ts-legend h2 { font-size: 1em; margin: 0.5em 0 0.15em; }
 
     .ts-node { overflow: visible; }
     .ts-node svg { overflow: visible; }
@@ -84,6 +93,13 @@
 
     .leaflet-control-layers, .leaflet-tooltip { background: var(--panel); color: var(--text);
         border-color: var(--border); }
+    .ts-layers-btn { font: 600 13px/1.2 system-ui, sans-serif; padding: 7px 12px; cursor: pointer;
+        background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+        box-shadow: 0 1px 4px rgb(0 0 0 / 25%); }
+    .ts-layers-btn:hover, .ts-layers-btn[aria-expanded="true"] { background: var(--hover); }
+    .ts-layers-pop { margin-top: 6px; padding: 8px 12px; background: var(--panel); color: var(--text);
+        border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / 30%); }
+    .ts-layers-pop label { display: block; white-space: nowrap; padding: 3px 0; cursor: pointer; }
     .leaflet-bar { border-color: var(--border); }
     .leaflet-bar a, .leaflet-bar a:hover { background: var(--panel); color: var(--text); border-bottom-color: var(--border); }
     .leaflet-bar a:hover { background: var(--hover); }
@@ -128,7 +144,12 @@
 </script>
 </head>
 <body>
-<div id="map"></div>
+<div id="ts-app">
+    <div id="map"></div>
+    <div id="ts-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the side pane" tabindex="0"
+         title="Drag to resize (or focus and use ← →)"></div>
+    <aside id="ts-pane" aria-label="TopoSite controls and legend"></aside>
+</div>
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/geoman/leaflet-geoman.min.js"></script>
 <script src="vendor/socket.io/socket.io.min.js"></script>
