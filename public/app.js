@@ -252,6 +252,11 @@ function drawNodes(pos, plan, placed, height) {
         })
             .bindTooltip(nodeTooltip(n, plan, isPlaced), { direction: 'top', offset: [0, -14] })
             .addTo(layers.nodes)
+        // Right-click opens a menu; nothing changes until a menu item is clicked
+        marker.on('contextmenu', (e) => {
+            L.DomEvent.preventDefault(e.originalEvent)          // no browser menu over nodes
+            openNodeMenu(n, marker, plan, isPlaced)
+        })
 
         if (!plan || !n.key) continue
         marker.on('dragend', async () => {
@@ -268,17 +273,6 @@ function drawNodes(pos, plan, placed, height) {
             }
             reload()
         })
-        if (isPlaced) {
-            marker.on('contextmenu', async () => {
-                try {
-                    await api(`placements/${encodeURIComponent(n.key)}`, { method: 'DELETE' })
-                    panel.setStatus(`${esc(n.name)} back to auto-layout.`)
-                } catch (error) {
-                    panel.setStatus(explain(error, `Couldn't unplace ${esc(n.name)}`))
-                }
-                reload()
-            })
-        }
     }
 }
 
@@ -290,6 +284,28 @@ function hintOtherPlans(plan, placed) {
     if (!elsewhere.length) return
     panel.setStatus(`No nodes placed on ${esc(plan.name)} yet. Positions are saved per plan — yours are on ` +
         `${elsewhere.map((p) => esc(p.name)).join(', ')}; pick it from the drop-down to see them.`)
+}
+
+/** Node menu (right-click): details, plus Unplace for placed nodes. Acts only on a click. */
+function openNodeMenu(n, marker, plan, isPlaced) {
+    const div = document.createElement('div')
+    div.className = 'ts-menu'
+    div.innerHTML = `<div class="ts-menu-details">${nodeTooltip(n, plan, isPlaced)}</div>` +
+        (plan && isPlaced && n.key ? '<div class="ts-row"><button type="button" data-act="unplace">Unplace</button></div>' : '')
+    const popup = L.popup({ closeButton: true, autoClose: true, offset: [0, -10] })
+        .setLatLng(marker.getLatLng())
+        .setContent(div)
+        .openOn(map)
+    div.querySelector('[data-act="unplace"]')?.addEventListener('click', async () => {
+        map.closePopup(popup)
+        try {
+            await api(`placements/${encodeURIComponent(n.key)}`, { method: 'DELETE' })
+            panel.setStatus(`${esc(n.name)} unplaced — back to the automatic layout.`)
+        } catch (error) {
+            panel.setStatus(explain(error, `Couldn't unplace ${esc(n.name)}`))
+        }
+        reload()
+    })
 }
 
 function nodeIcon(n, solid) {
@@ -328,7 +344,7 @@ function nodeTooltip(n, plan, isPlaced) {
     if (n.neighbors.length) lines.push(`Neighbors: ${n.neighbors.join(', ')}`)
     if (n.unknownNeighbors?.length) lines.push(`Stale neighbor IDs (no such node): ${n.unknownNeighbors.join(', ')}`)
     if (plan) {
-        lines.push(`<span class="muted">${isPlaced ? 'Drag to move · right-click to unplace' : 'Not placed — drag onto the plan'}</span>`)
+        lines.push(`<span class="muted">${isPlaced ? 'Drag to move · right-click for options' : 'Not placed — drag onto the plan'}</span>`)
     }
     return lines.join('<br>')
 }

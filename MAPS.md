@@ -89,8 +89,14 @@ The layout should feel like an app, not a debug page.
     remove. Changing the background asks whether to keep the node positions
     (same-sized replacement) or clear them.
 - **Map area**: background, links, nodes, legend. In edit mode nodes can be
-  dragged (or right-clicked to unplace), and drawing tools are available when
-  the background is a drawing.
+  dragged, and drawing tools are available when the background is a drawing.
+- **Node menu (right-click):** it never acts on its own (user, 2026-10-10:
+  "way too easy"). It opens a menu, and nothing changes until an item is
+  clicked:
+  - **Details:** always shown.
+  - **Unplace:** back to the tray; edit mode only.
+  - **Hide on this map:** edit mode only.
+  - **Link to… / Delete:** on placeholders; edit mode only.
 
 **New map…** asks for:
 
