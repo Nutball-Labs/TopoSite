@@ -66,7 +66,7 @@ test('placement API validates input and reports missing plans', async () => {
     assert.equal((await call(put, { body: { deviceKey: 'bad', planId: 'p', x: 1, y: 1 } })).status, 400)
     assert.equal((await call(put, { body: { deviceKey: 'zwave:cdfbb3c7:2', planId: 'nope', x: 1, y: 1 } })).status, 404)
     const layout = await call(routes[`GET ${BASE}/api/layout`])
-    assert.deepEqual(layout.body.data, { version: 1, plans: [], placements: [], shapes: [] })
+    assert.deepEqual(layout.body.data, { version: 1, plans: [], placements: [] })
 })
 
 test('map page: bare base redirects to the trailing-slash URL, files come from public/', async () => {

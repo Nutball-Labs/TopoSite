@@ -8,19 +8,17 @@ applies to backgrounds.
 
 A self-contained app that lives inside Z-Wave JS UI at `/toposite/`. It
 opens on a **map** and lets you switch between maps. A map shows Z-Wave nodes
-and their links, either on a background (floor plan, drawing, photo) or with
+and their links, either on a background image (floor plan, photo, anything) or with
 no background as a live network graph.
 
 ## Concepts
 
 ### Background
 
-A reusable picture that maps are drawn on. There are two kinds:
-
-- **Image**: an uploaded PNG, JPEG or WebP (a floor plan export, satellite
-  screenshot, photo).
-- **Drawing**: walls, cabinets and labels drawn in TopoSite (or loaded from a
-  shapes file), optionally with an image underneath.
+A reusable picture that maps are drawn on: an uploaded PNG, JPEG or WebP the
+user creates elsewhere (a floor plan export, satellite screenshot, photo),
+with an optional **dark-mode version** shown while Z-Wave JS UI is dark.
+TopoSite has no drawing tools (user, 2026-10-10).
 
 A background has a size in pixels, an optional scale (`metersPerPixel`), and
 later a georef. It belongs to no particular map, and any number of maps can
@@ -39,7 +37,7 @@ A named, saved view. It has:
   Z-Wave later: on an include-all map they appear, on an exclude-all map they
   stay hidden.
 - **View settings**: the saved zoom and centre, and which layers are on
-  (routes, backup routes, neighbors, drawing).
+  (routes, backup routes, neighbors).
 
 ### Default map
 
@@ -81,7 +79,7 @@ The layout should feel like an app, not a debug page.
   pane's width, and the width is remembered per browser. It holds the controls
   and the legend, and in future the sections below.
 - **Layers…** button on the map's top right (Google Maps style): opens toggles
-  for routes, backup routes, neighbors, nodes and drawing.
+  for routes, backup routes, neighbors and nodes.
 - **Pane sections:**
   - **Maps**: list, **New map…**, rename, **Set as default**, delete (two
     clicks).
@@ -91,11 +89,11 @@ The layout should feel like an app, not a debug page.
     by name.
   - **Unplaced tray** (edit mode): shown nodes with no position on this map.
     Drag them onto the map.
-  - **Background** (edit mode): pick from the library, upload an image, draw,
+  - **Background** (edit mode): pick from the library, upload an image (and its dark version),
     remove. Changing the background asks whether to keep the node positions
     (same-sized replacement) or clear them.
 - **Map area**: background, links, nodes, legend. In edit mode nodes can be
-  dragged, and drawing tools are available when the background is a drawing.
+  dragged.
 - **Node menu (right-click):** it never acts on its own (user, 2026-10-10:
   "way too easy"). It opens a menu, and nothing changes until an item is
   clicked. It holds actions only: details stay on the hover tooltip, which
@@ -109,7 +107,7 @@ The layout should feel like an app, not a debug page.
 
 - name
 - background: none (live graph), an existing background, upload an image, or
-  a new drawing
+
 - starting rule: include all / exclude all
 - optional **copy positions from** another map, a one-time copy after which
   the two maps are independent; only offered when both maps use the same
@@ -120,9 +118,8 @@ The layout should feel like an app, not a debug page.
 ```
 version: 2
 settings:    { defaultMapId }
-backgrounds: [{ id, name, kind: image|drawing, image?, imageRect?, widthPx, heightPx,
+backgrounds: [{ id, name, image, imageDark?, imageRect, widthPx, heightPx,
                 metersPerPixel?, elevationM, georef? }]
-shapes:      [{ id, backgroundId, type, … }]        # drawings belong to the background
 maps:        [{ id, name, backgroundId | null,
                 nodes: { start: include|exclude, exceptions: [deviceKey] },
                 view: { center, zoom, layers } }]
@@ -139,7 +136,7 @@ placements:  [{ mapId, deviceKey | null, x, y, seen: { name, deviceId, dsk? },
 ### Migration from version 1 (today's plans)
 
 - Each plan becomes a **background** with the same id, size, image,
-  imageRect, scale and shapes.
+  imageRect and scale. Plans without an image get no background (their maps use the live graph). Legacy `shapes` are dropped.
 - Each plan also becomes a **map** with the same name, using that background,
   rule *include all*, no exceptions.
 - Placements move from `planId` to the new map's id, coordinates unchanged.
@@ -151,9 +148,9 @@ placements:  [{ mapId, deviceKey | null, x, y, seen: { name, deviceId, dsk? },
 ## API (sketch)
 
 - **`/api/backgrounds`**:
-  - `GET`, `POST` (image or blank drawing), `PATCH :id` (name, size, pad,
+  - `GET`, `POST` (image), `PATCH :id` (name, size, pad,
     scale)
-  - `PUT|DELETE :id/image`, `PUT :id/shapes`
+  - `PUT|DELETE :id/image[?variant=dark]`
   - `DELETE :id`: 409 while a map uses it
 - **`/api/maps`**:
   - `GET`, `POST` (with optional `copyPositionsFrom`)
@@ -187,8 +184,8 @@ holding:
 - **Header:** `format: "toposite-map"`, `version: 1`, `exportedAt`, and the
   source's Z-Wave home ID and TopoSite version.
 - **The map:** name, node rule, view settings, and its **background** in full:
-  the image as base64 (with `imageRect`), size, scale, and the drawing's
-  shapes. The Network Graph map exports without a background.
+  the image (and dark version) as base64 with `imageRect`, size and scale.
+  The Network Graph map exports without a background.
 - **A node manifest:** one entry per node the map refers to (placed, or in its
   exceptions), with a file-local `ref` and identity:
   - `homeId`, `nodeId`

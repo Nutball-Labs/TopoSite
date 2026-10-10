@@ -55,9 +55,9 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | `index.js` | Plugin entry: default-export class Z-Wave JS UI constructs with `{zwave, mqtt, app, logger}`; registers routes under `/toposite/` |
 | `lib/mesh.js` | **The only file that reads Z-Wave JS UI's internal `ZUINode` shape** — converts it to TopoSite's node model; adds `key` = `zwave:<homeId>:<nodeId>` from `zwave.homeHex` |
 | `lib/auth.js` | **The only file that reads Z-Wave JS UI's auth files** (`settings.json` `gateway.authEnabled`, `.session-secret` / `SESSION_SECRET`, `users.json`, `TRUSTED_API_LISTEN`) — accepts exactly the logins Z-Wave JS UI accepts; HS256 JWT check with `node:crypto` |
-| `lib/layout.js` | Plans (image or blank), placements and drawn shapes (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, strict shape validation, serialized atomic writes |
+| `lib/layout.js` | Plans (background image + optional dark variant, or none), placements (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
 | `lib/store.js` | Store dir resolution (`TOPOSITE_STORE_DIR` → `STORE_DIR` → `<cwd>/store` → two dirs above the plugin; must contain `settings.json`), atomic JSON writes |
-| `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4, Leaflet-Geoman free 2.20.2 — no SN, skipped by sn_audit) |
+| `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4 — no SN, skipped by sn_audit) |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
 | `ROADMAP.md` | Zoom levels (satellite → floor plan → room panorama), data model, phases |
 | `MAPS.md` | **Product definition (2026-10-09):** maps, reusable backgrounds, per-map positions and node lists, built-in Network Graph, data model v2 and migration, build order. Read before changing the UI or `layout.json` |
@@ -72,13 +72,12 @@ the request; the static page files are open (no data in them).
 | Route | Returns |
 |---|---|
 | `GET /toposite/` | Map page (static files from `public/`; `/toposite` redirects to `/toposite/`) |
-| `GET /toposite/api/layout` | `{success, data: {version, plans[], placements[], shapes[]}}` (ROADMAP data model) |
+| `GET /toposite/api/layout` | `{success, data: {version, plans[], placements[]}}` (ROADMAP data model; a legacy `shapes[]` may be present and is ignored) |
 | `POST /toposite/api/plans?name&widthPx&heightPx` | Body = raw PNG/JPEG/WebP bytes (≤ 25 MB; size decoded by the browser) → new plan |
-| `POST /toposite/api/plans/blank` | JSON `{name, widthPx, heightPx}` → blank plan (`image: null`) to draw on |
-| `PUT /toposite/api/plans/:id/shapes` | JSON `{shapes: [...]}` replaces the plan's drawing. Shapes (plan px): `rect {x,y,w,h}`, `circle {x,y,r}`, `line {points:[[x,y]…]}`, `label {x,y,text≤200}` |
-| `PATCH /toposite/api/plans/:id` | JSON, any of `{name, widthPx, heightPx, metersPerPixel, padTop, padLeft, expectWidthPx, expectHeightPx}`. Growing keeps all positions (top-left origin) and the background's `imageRect`. `padTop`/`padLeft` add room above/left and move the plan's placements, shapes and background with it; `expect*` refuses (409) unless the current size matches, so a pad is safe to retry |
-| `DELETE /toposite/api/plans/:id` | Deletes the plan, its image, placements and shapes |
-| `PUT /toposite/api/plans/:id/image?imgWidthPx&imgHeightPx[&variant=dark]` | Body = raw PNG/JPEG/WebP → set or replace the plan's background, keeping placements, shapes and scale. New: covers the whole plan; replacement: takes the old `imageRect`. Response has `stretched: true` if the aspect differs >2% |
+| `POST /toposite/api/plans/blank` | JSON `{name, widthPx, heightPx}` → plan with no image yet (shown as a grid) |
+| `PATCH /toposite/api/plans/:id` | JSON, any of `{name, widthPx, heightPx, metersPerPixel, padTop, padLeft, expectWidthPx, expectHeightPx}`. Growing keeps all positions (top-left origin) and the background's `imageRect`. `padTop`/`padLeft` add room above/left and move the plan's placements and background with it; `expect*` refuses (409) unless the current size matches, so a pad is safe to retry |
+| `DELETE /toposite/api/plans/:id` | Deletes the plan, its images and placements |
+| `PUT /toposite/api/plans/:id/image?imgWidthPx&imgHeightPx[&variant=dark]` | Body = raw PNG/JPEG/WebP → set or replace the plan's background, keeping placements and scale. New: covers the whole plan; replacement: takes the old `imageRect`. Response has `stretched: true` if the aspect differs >2% |
 | `DELETE /toposite/api/plans/:id/image[?variant=dark]` | Remove the background (both variants; `?variant=dark` just the dark one); everything else stays. `variant=dark` images (plan field `imageDark`) share `imageRect` and are shown while the UI is dark |
 | `GET /toposite/api/plans/:id/image` | The plan image (the page fetches it with the token → object URL) |
 | `PUT /toposite/api/placements` | JSON `{deviceKey, planId, x, y}` (plan pixels, clamped) — one placement per device |
@@ -209,10 +208,9 @@ SNs, bump version, commit, and push.
 - **Leaflet** — simple (pixel) mode for floor plans; Web Mercator once a plan is
   georeferenced for the satellite level. Serve Leaflet from the plugin (no
   CDN) — many Z-Wave JS UI installs are LAN-only.
-- **Leaflet-Geoman for drawing — NOT in opt-in mode.** In opt-in mode its
-  text tool creates a read-only label (no `pm` at creation; found live
-  2026-10-09). Instead every non-drawing layer (nodes, links, backgrounds and
-  their layer groups) is created with `pmIgnore: true, snapIgnore: true`.
+- **No drawing tools** (user, 2026-10-10). Backgrounds are images the user
+  creates elsewhere (any PNG/JPEG/WebP, plus an optional dark-mode version).
+  The Leaflet-Geoman drawing tools added 2026-10-09 were removed.
 - **Layout storage:** plans, rooms, panoramas and placements as JSON in Z-Wave
   JS UI's store dir — `<store>/toposite/layout.json`, images in
   `<store>/toposite/images/` — outside the plugin dir so redeploys never touch

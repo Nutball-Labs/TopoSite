@@ -63,12 +63,10 @@ export default class TopoSite {
 
         api('delete', '/plans/:id', (req) => this._layout().deletePlan(req.params.id))
 
-        // Body (JSON): {shapes: [...]} — replaces every drawn shape on the plan
-        api('put', '/plans/:id/shapes', (req) => this._layout().setShapes(req.params.id, req.body?.shapes))
 
         // Body: raw image bytes. Query: imgWidthPx, imgHeightPx (decoded by the browser),
         // variant=light|dark (default light; dark is shown while the UI is in dark mode).
-        // Sets or replaces the background; placements, shapes and scale stay.
+        // Sets or replaces the background; placements and scale stay.
         api('put', '/plans/:id/image', async (req) => {
             const bytes = await readBody(req, MAX_IMAGE_BYTES)
             return this._layout().setImage(req.params.id, {
