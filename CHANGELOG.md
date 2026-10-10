@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- TopoSite logo: README header (light/dark), browser-tab icon
 - Node names layer: show or hide node name labels (previously they appeared
   only when zoomed in); saved per map
 

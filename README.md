@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/logo-wordmark-dark.png">
+    <img src="images/logo-wordmark-light.png" alt="TopoSite" width="420">
+  </picture>
+</p>
+
 # TopoSite
 
 TopoSite is a [Z-Wave JS UI](https://github.com/zwave-js/zwave-js-ui) plugin
