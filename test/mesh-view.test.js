@@ -2,7 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { autoLayout, buildLinks, forceLayout, mapView, meshHealth, nodeColor, routeSegments, rssiLabel, nodeLabel } from '../public/mesh-view.js'
+import { agoLabel, autoLayout, batteryLevelClass, buildLinks, forceLayout, mapView, meshHealth, nodeColor, routeSegments, rssiLabel, nodeLabel } from '../public/mesh-view.js'
 
 // Shaped like /toposite/api/nodes output; values from a live 11.24.2 mesh (2026-10-09).
 const route = (repeaters, rssi, repeaterRSSI, rate, failedBetween = null) =>
@@ -133,6 +133,13 @@ test('network graph layout: controller centred, deterministic, on the canvas, ro
     assert.ok(dist(a.get(3), a.get(2)) < dist(a.get(3), a.get(75)), '3 routes via 2, nothing ties it to the dead node 75')
     const seen = new Set([...a.values()].map(([y, x]) => `${Math.round(y)},${Math.round(x)}`))
     assert.equal(seen.size, NODES.length, 'no two nodes on the same spot')
+})
+
+test('battery tag levels and report ages', () => {
+    assert.deepEqual([90, 30, 16, 15, 0, null].map(batteryLevelClass), ['ok', 'warn', 'warn', 'bad', 'bad', null])
+    const now = 1_760_000_000_000
+    assert.deepEqual([now - 30e3, now - 20 * 60e3, now - 3 * 3600e3, now - 3 * 86400e3, null].map((t) => agoLabel(t, now)),
+        ['just now', '20 min ago', '3 h ago', '3 days ago', 'never'])
 })
 
 // SN: 00001

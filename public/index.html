@@ -143,6 +143,12 @@
     #ts-healthlist li[data-y] { cursor: pointer; }
     #ts-healthlist li[data-y]:hover { background: var(--hover); }
     .ts-dot { width: 0.6em; height: 0.6em; border-radius: 50%; flex: none; }
+    /* Battery tags */
+    .ts-batt { white-space: nowrap; font: 600 10px/1 system-ui, sans-serif; padding: 2px 4px; border-radius: 7px;
+        background: var(--panel); color: var(--text); border: 1px solid var(--border); width: auto !important; height: auto !important; }
+    .ts-batt-warn { background: #ff9800; color: #111; border-color: #ff9800; }
+    .ts-batt-bad { background: #e53935; color: #fff; border-color: #e53935; }
+    .ts-batt.ts-inline { font-size: 0.75em; flex: none; }
     .ts-ph circle { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 3 3; }
 
     /* Import review screen */

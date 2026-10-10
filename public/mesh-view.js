@@ -309,6 +309,20 @@ export const HEALTH = {
     fewNeighbors: 2,     // a node with fewer neighbors than this has little to route through
 }
 export const HEALTH_COLORS = { warn: '#ff9800', bad: '#e53935' }
+// Battery tags: at or below these percentages the tag turns amber / red
+export const BATTERY_LOW = { warn: 30, bad: 15 }
+export function batteryLevelClass(level) {
+    return level == null ? null : level <= BATTERY_LOW.bad ? 'bad' : level <= BATTERY_LOW.warn ? 'warn' : 'ok'
+}
+/** "3 h ago" style age of a ms-since-epoch time, relative to now. */
+export function agoLabel(ms, now = Date.now()) {
+    if (!ms) return 'never'
+    const s = Math.max(0, Math.round((now - ms) / 1000))
+    if (s < 90) return 'just now'
+    if (s < 5400) return `${Math.round(s / 60)} min ago`
+    if (s < 129600) return `${Math.round(s / 3600)} h ago`
+    return `${Math.round(s / 86400)} days ago`
+}
 
 /**
  * Mesh-health flags (CLAUDE.md: "Mesh health is core scope"). Pure, from

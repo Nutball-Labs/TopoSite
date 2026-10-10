@@ -21,7 +21,7 @@
 // the radio briefly paused.
 
 import {
-    forceLayout, mapView, meshHealth, HEALTH_COLORS, nodeColor, nodeLabel, mainRoute, rateColor, rateLabel,
+    agoLabel, batteryLevelClass, forceLayout, mapView, meshHealth, BATTERY_LOW, HEALTH_COLORS, nodeColor, nodeLabel, mainRoute, rateColor, rateLabel,
     rssiLabel, HOP_LEGEND, RATE_LEGEND,
 } from './mesh-view.js'
 
@@ -48,6 +48,7 @@ const layers = {
     neighbors: L.layerGroup().addTo(map),
     nodes: L.layerGroup().addTo(map),
     health: L.layerGroup().addTo(map),
+    battery: L.layerGroup(),
 }
 const LAYER_CHOICES = [
     ['Routes (last working)', layers.routes],
@@ -55,9 +56,10 @@ const LAYER_CHOICES = [
     ['Neighbors (when known)', layers.neighbors],
     ['Nodes', layers.nodes],
     ['Mesh health', layers.health],
+    ['Battery level', layers.battery],
 ]
 // view.layers keys saved with each map (lib/layout.js DEFAULT_LAYERS) → layer groups
-const VIEW_LAYERS = { routes: layers.routes, backupRoutes: layers.nlwr, neighbors: layers.neighbors, nodes: layers.nodes, health: layers.health }
+const VIEW_LAYERS = { routes: layers.routes, backupRoutes: layers.nlwr, neighbors: layers.neighbors, nodes: layers.nodes, health: layers.health, battery: layers.battery }
 const VIEW_DEFAULTS = { routes: true, backupRoutes: false, neighbors: true, nodes: true, health: true, battery: false }
 addLayersButton()
 
@@ -244,6 +246,7 @@ async function draw() {
     hintPlacing(plan, placed, unplaced)
     drawNodes(nodePos, plan, height)
     drawHealth(shown, nodePos, view.pos)
+    drawBattery(nodePos)
     drawPlaceholders(plan, height)
     panel.setEdit(cur, unplaced)
 }
@@ -372,6 +375,21 @@ function drawHealth(shown, nodePos, allPos) {
         .sort(([, a], [, b]) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1))
     panel.setHealth(listed.map(([id, f]) => ({ id, name: byId.get(id) ? nodeLabel(byId.get(id)) : `NodeID ${id}`, ...f, pos: nodePos.get(id) ?? allPos.get(id) })),
         h.oneWay.filter((w) => nodePos.has(w.from) && nodePos.has(w.to)).length)
+}
+
+/** Battery layer: a percentage tag beside each battery node (amber / red when low). */
+function drawBattery(nodePos) {
+    layers.battery.clearLayers()
+    for (const n of state.nodes) {
+        const p = nodePos.get(n.id)
+        if (!p || n.battery == null) continue
+        L.marker(p, {
+            keyboard: false,
+            interactive: true,
+            icon: L.divIcon({ className: `ts-batt ts-batt-${batteryLevelClass(n.battery)}`, iconSize: null, iconAnchor: [-14, 8], html: `${n.battery}%` }),
+        }).bindTooltip(`${esc(n.name)}: battery ${n.battery}%, last heard from ${agoLabel(n.lastSeen)}`, { direction: 'top' })
+            .addTo(layers.battery)
+    }
 }
 
 let saveViewTimer = 0
@@ -595,6 +613,7 @@ function nodeTooltip(n, plan) {
     } else if (n.role !== 'controller') {
         lines.push('No route statistics')
     }
+    if (n.battery != null) lines.push(`Battery ${n.battery}% · last heard from ${agoLabel(n.lastSeen)}`)
     if (n.neighbors.length) lines.push(`Neighbors: ${n.neighbors.join(', ')}`)
     if (n.unknownNeighbors?.length) lines.push(`Stale neighbor IDs (no such node): ${n.unknownNeighbors.join(', ')}`)
     lines.push(`<span class="muted">${state.edit ? (plan ? 'Drag to move · right-click for options' : 'Right-click for options')
@@ -1429,6 +1448,10 @@ function addLegend() {
                 <h2>Link color = data rate</h2>${RATE_LEGEND.map(([t, c]) => `<div><span class="ln" style="border-color:${c}"></span>${t}</div>`).join('')}
                 <div><span class="ln" style="border-top-style:dashed;border-color:#888"></span>backup route</div>
                 <div><span class="ts-gsw"></span>repeater hidden or not placed on this map</div>
+                <h2>Battery level (layer)</h2>
+                <div><span class="ts-batt ts-batt-ok ts-inline">87%</span>last reported level</div>
+                <div><span class="ts-batt ts-batt-warn ts-inline">${BATTERY_LOW.warn}%</span>low (≤ ${BATTERY_LOW.warn}%)</div>
+                <div><span class="ts-batt ts-batt-bad ts-inline">${BATTERY_LOW.bad}%</span>very low (≤ ${BATTERY_LOW.bad}%)</div>
                 <h2>Mesh health</h2>
                 <div><span class="ts-ring" style="border-color:${HEALTH_COLORS.bad}"></span>problem (isolated, failed hop, very weak signal)</div>
                 <div><span class="ts-ring" style="border-color:${HEALTH_COLORS.warn}"></span>warning (few neighbors, weak signal, backup route)</div>

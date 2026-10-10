@@ -103,8 +103,10 @@ its left edge to resize) has:
   only judged after **Refresh neighbors** has filled most neighbor tables.
 - **Legend**: shows or hides the legend.
 
-On the map: **Layers…** (top right) toggles routes, backup routes, neighbors
-and nodes. Nodes hidden on a map aren't drawn, but if one repeats for a shown
+On the map: **Layers…** (top right) toggles routes, backup routes, neighbors,
+nodes, mesh health and **battery level** (a percentage tag beside each battery
+node — amber at 30 % or below, red at 15 % or below; it's the last level the
+device reported, and the hover box says when that was). Nodes hidden on a map aren't drawn, but if one repeats for a shown
 node's route it appears as a small grey dot so the route stays traceable
 (a dashed ring means its spot is approximate — it has no position on this map). Positions are saved in Z-Wave JS UI's store, so they're kept with
 its backups.

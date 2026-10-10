@@ -71,6 +71,13 @@ test('nodes carry identity for export/import matching', () => {
     assert.equal(deviceIdOf({ manufacturerId: 29 }), null)
 })
 
+test('battery level and last seen come from Z-Wave JS UI when it has them', () => {
+    const n = toNode({ id: 9, isListening: false, available: true, minBatteryLevel: 87, batteryLevels: { 0: 87 }, lastActive: 1760000000000 })
+    assert.deepEqual([n.battery, n.lastSeen], [87, 1760000000000])
+    const m = toNode({ id: 2, isListening: true, available: true, minBatteryLevel: Infinity })
+    assert.deepEqual([m.battery, m.lastSeen], [null, null], 'mains node (no Battery CC) and never seen')
+})
+
 test('getNodes skips virtual nodes and separates stale neighbor IDs', () => {
     const zwave = {
         getNodes: () => [
