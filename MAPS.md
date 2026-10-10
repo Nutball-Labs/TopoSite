@@ -15,10 +15,11 @@ no background as a live network graph.
 
 ### Background
 
-A reusable picture that maps are drawn on: an uploaded PNG, JPEG or WebP the
-user creates elsewhere (a floor plan export, satellite screenshot, photo),
-with an optional **dark-mode version** shown while Z-Wave JS UI is dark.
-TopoSite has no drawing tools (user, 2026-10-10).
+A reusable picture in the library: an uploaded PNG, JPEG or WebP the user
+creates elsewhere (a floor plan export, satellite screenshot, photo), with an
+optional **dark-mode version** shown while Z-Wave JS UI is dark. TopoSite has
+no drawing tools (user, 2026-10-10). A background records its image files and
+their natural size. Where it sits is up to each map that uses it.
 
 A background has a size in pixels, an optional scale (`metersPerPixel`), and
 later a georef. It belongs to no particular map, and any number of maps can
@@ -28,16 +29,26 @@ use it. Deleting a background is refused while a map still uses it.
 
 A named, saved view. It has:
 
-- **A background**, or *none*, which means the live graph layout.
-- **Node positions**, stored **per map**, in the background's pixels. Two
-  maps on the same background can place a node in different spots.
+- **A layout** (user, 2026-10-10):
+  - **`placed`**: nodes sit where they've been put on the map's canvas, with
+    or without a background image. This is every map except one.
+  - **`graph`**: nodes are laid out live, Network Graph style. Nothing is
+    placed and nothing is stored as positions. This is the built-in Network
+    Graph map.
+- **A canvas** (placed maps): a size in pixels, and optionally a
+  **background** from the library, with where it sits on this canvas
+  (`imageRect`). The same background can be framed differently on different
+  maps. With no background the canvas shows a grid.
+- **Node positions**, stored **inside the map** (one per device per map), in
+  canvas pixels. Two maps can place a node in different spots. Deleting a map
+  deletes its positions.
 - **A node list**: a starting rule (**include all** or **exclude all**) plus
   per-node **exceptions**. Shown nodes are the starting rule with the
   exceptions flipped. The rule also decides what happens to nodes added to
   Z-Wave later: on an include-all map they appear, on an exclude-all map they
   stay hidden.
 - **View settings**: the saved zoom and centre, and which layers are on
-  (routes, backup routes, neighbors).
+  (routes, backup routes, neighbors, nodes).
 
 ### Default map
 
@@ -46,14 +57,15 @@ user picks one, the default is the built-in **Network Graph** map.
 
 ### Network Graph (built in)
 
-- No background and nothing to place: nodes are laid out live, like Z-Wave JS
-  UI's mesh graph. The controller sits in the middle and nodes are pulled
+- `layout: "graph"`, no canvas and nothing to place: nodes are laid out live,
+  like Z-Wave JS UI's mesh graph. The controller sits in the middle and nodes are pulled
   together along their routes. Shapes and colors follow `CLAUDE.md`.
 - It can't be deleted or renamed. It has its own node list and view settings.
 
 ## Rendering rules
 
-- **Shown nodes** draw at their position on the map. A shown node with **no
+- **Shown nodes** draw at their position on the map (on a `placed` map) or
+  wherever the live layout puts them (on the `graph` map). A shown node with **no
   position** waits in the **unplaced tray** (see the UI section) instead of
   being dropped somewhere on the map.
 - **Hidden nodes** don't draw. The exception: when a hidden node is a
@@ -114,57 +126,116 @@ The layout should feel like an app, not a debug page.
 **New map…** asks for:
 
 - name
-- background: none (live graph), an existing background, upload an image, or
-
+- background: none (a blank grid canvas), an existing background from the
+  library, or upload an image. A new map is always `layout: "placed"`; the
+  Network Graph is the only `graph` map.
 - starting rule: include all / exclude all
 - optional **copy positions from** another map, a one-time copy after which
   the two maps are independent; only offered when both maps use the same
-  background
+  background with the same framing
 
 ## Data model (stored in `<store>/toposite/layout.json`)
 
-```
-version: 2
-settings:    { defaultMapId }
-backgrounds: [{ id, name, image, imageDark?, imageRect, widthPx, heightPx,
-                metersPerPixel?, elevationM, georef? }]
-maps:        [{ id, name, backgroundId | null,
-                nodes: { start: include|exclude, exceptions: [deviceKey] },
-                view: { center, zoom, layers } }]
-placements:  [{ mapId, deviceKey | null, x, y, seen: { name, deviceId, dsk? },
-                placeholder?: { name, loc, deviceId, productLabel } }]
+Positions are nested inside their map, so one tree holds everything a map
+owns (user, 2026-10-10). Live node data (names, routes, status) is never
+stored; it comes from Z-Wave JS UI on every request, keyed by `deviceKey`.
+
+```json
+{
+  "version": 2,
+  "settings": { "defaultMapId": "a1b2c3d4" },
+  "backgrounds": [
+    { "id": "bg01", "name": "House floor plan",
+      "image": "bg01-3f9a1c.png", "imageDark": "bg01-dark-77e0b2.png",
+      "widthPx": 1500, "heightPx": 2550 }
+  ],
+  "maps": [
+    { "id": "graph", "name": "Network Graph", "builtin": true, "layout": "graph",
+      "nodes": { "start": "include", "exceptions": [] },
+      "view": { "center": null, "zoom": null,
+                "layers": { "routes": true, "backupRoutes": false, "neighbors": false, "nodes": true } } },
+
+    { "id": "a1b2c3d4", "name": "Workshop sketch", "layout": "placed",
+      "widthPx": 2000, "heightPx": 1500, "metersPerPixel": null,
+      "background": null,
+      "nodes": { "start": "include", "exceptions": ["zwave:cdfbb3c7:59"] },
+      "view": { "center": [750, 1000], "zoom": -1,
+                "layers": { "routes": true, "backupRoutes": false, "neighbors": true, "nodes": true } },
+      "placements": [
+        { "deviceKey": "zwave:cdfbb3c7:58", "x": 420, "y": 310,
+          "seen": { "name": "Workshop Attic Lights", "deviceId": "99-1-1" } },
+        { "deviceKey": "zwave:cdfbb3c7:68", "x": 1610, "y": 880,
+          "seen": { "name": "Mini-Split", "deviceId": "271-4096-2" } },
+        { "id": "ph-7f3a91c2", "deviceKey": null, "x": 980, "y": 1200,
+          "placeholder": { "name": "Shop Sensor", "loc": "Workshop",
+                           "deviceId": "134-2-100", "productLabel": "ZSE40" } }
+      ] },
+
+    { "id": "e5f6a7b8", "name": "House", "layout": "placed",
+      "widthPx": 3000, "heightPx": 5100, "metersPerPixel": 0.006096,
+      "background": { "id": "bg01", "imageRect": { "x": 0, "y": 0, "w": 3000, "h": 5100 } },
+      "nodes": { "start": "include", "exceptions": [] },
+      "view": { "center": null, "zoom": null, "layers": { "routes": true, "backupRoutes": false, "neighbors": false, "nodes": true } },
+      "placements": [] }
+  ]
+}
 ```
 
-- The built-in Network Graph map is stored like any other map, with
-  `backgroundId: null` and `builtin: true`, so its node list and view are saved.
-- **Resizing** or **padding** a background moves the positions of **every map
-  that uses it**, the same way `padTop` works today.
-- `deviceKey` stays `zwave:<homeId>:<nodeId>`.
+**Field rules:**
+
+- **`layout`:** `"graph"` or `"placed"`. A `graph` map has no canvas,
+  `background` or `placements`. Exactly one map has `builtin: true` (the Network
+  Graph): it can't be deleted or renamed, but its node list and view are saved.
+- **`background`:** on a placed map, `null` (grid) or `{ id, imageRect }`. The
+  `id` points into `backgrounds[]`, and `imageRect` (canvas px) is where the
+  picture sits on *this* map.
+- **`placements`:** one entry per device per map, in canvas px (x right, y down
+  from the top-left). An entry is either a device (`deviceKey`, plus the `seen`
+  identity snapshot taken when placed) or a **placeholder** (`id`, `deviceKey:
+  null`, `placeholder`) from an import.
+- **`nodes.exceptions`:** on an `include` map these are hidden; on an
+  `exclude` map they're shown.
+- **Resizing or padding** a map's canvas moves *that map's* placements and
+  `imageRect` together, as `padTop` does today. Other maps using the same
+  background are unaffected.
+- **`deviceKey`** stays `zwave:<homeId>:<nodeId>`.
+- **Deleting a background** is refused (409) while any map uses it.
 
 ### Migration from version 1 (today's plans)
 
-- Each plan becomes a **background** with the same id, size, image,
-  imageRect and scale. Plans without an image get no background (their maps use the live graph). Legacy `shapes` are dropped.
-- Each plan also becomes a **map** with the same name, using that background,
-  rule *include all*, no exceptions.
-- Placements move from `planId` to the new map's id, coordinates unchanged.
-- `defaultMapId` is the map migrated from the plan named **House** if there
-  is one, otherwise the Network Graph.
+- Each plan becomes a **placed map** with the same id, name, size and scale.
+  Its placements move inside it with coordinates unchanged (`planId`
+  dropped). Placeholders keep their `id`.
+- A plan with an image also becomes a **background** holding its image files
+  and natural size. The map gets `background: { id, imageRect }`, using the
+  plan's `imageRect`. A plan without an image becomes a map with `background:
+  null`.
+- Every migrated map gets the rule *include all* with no exceptions, and an
+  empty view.
+- The built-in Network Graph map (`layout: "graph"`) is added.
+- `defaultMapId` is the map migrated from the plan named **House** if there is
+  one, otherwise the Network Graph.
+- Legacy `shapes` from the removed drawing tools are dropped.
 - The migration runs once, on first load of a v1 file. A copy of the old file
   is kept as `layout.v1.json`.
 
 ## API (sketch)
 
 - **`/api/backgrounds`**:
-  - `GET`, `POST` (image), `PATCH :id` (name, size, pad,
-    scale)
+  - `GET`, `POST` (upload an image; `?variant=dark` for the dark version)
   - `PUT|DELETE :id/image[?variant=dark]`
+  - `PATCH :id` (name)
   - `DELETE :id`: 409 while a map uses it
 - **`/api/maps`**:
-  - `GET`, `POST` (with optional `copyPositionsFrom`)
-  - `PATCH :id` (name, background, node rule and exceptions, view)
-  - `DELETE :id`
-- **`/api/maps/:id/placements`**: `PUT` and `DELETE`.
+  - `GET`, `POST` (`{name, layout: "placed", widthPx?, heightPx?,
+    background?, nodes, copyPositionsFrom?}`)
+  - `PATCH :id`: name, background (`{id, imageRect}` or null), canvas size or
+    pad, scale, node rule and exceptions, view
+  - `DELETE :id`: refused for the built-in map
+- **`/api/maps/:id/placements`**: `PUT {deviceKey, x, y}`, `DELETE
+  :deviceKey`.
+- **`/api/maps/:id/placeholders/:phId`**: `PUT {deviceKey}` (link),
+  `DELETE`.
 - **`/api/settings`**: `PATCH { defaultMapId }`.
 - `/api/nodes` is unchanged. Filtering is done in the page, so switching maps
   doesn't refetch.
@@ -191,7 +262,8 @@ holding:
 
 - **Header:** `format: "toposite-map"`, `version: 1`, `exportedAt`, and the
   source's Z-Wave home ID and TopoSite version.
-- **The map:** name, node rule, view settings, and its **background** in full:
+- **The map:** name, `layout`, canvas size, node rule, view settings, and its
+  **background** in full (with this map's `imageRect`):
   the image (and dark version) as base64 with `imageRect`, size and scale.
   The Network Graph map exports without a background.
 - **A node manifest:** one entry per node the map refers to (placed, or in its
