@@ -7,23 +7,42 @@
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="vendor/geoman/leaflet-geoman.css">
 <style>
+    /* Light by default. Dark when Z-Wave JS UI's theme is dark (data-theme set by the
+       script below), or when it's "system" and the OS prefers dark. */
     :root {
         --bg: #f4f4f2;
         --panel: #ffffff;
+        --hover: #eeeeee;
         --text: #222222;
         --muted: #666666;
         --border: #cccccc;
         --draw: #3a3a3a;
+        --icon-filter: none;
+        color-scheme: light;
     }
     @media (prefers-color-scheme: dark) {
-        :root {
-            --bg: #1e1f22;
-            --panel: #2b2d31;
-            --text: #e6e6e6;
-            --muted: #9a9a9a;
-            --border: #44464b;
+        :root:not([data-theme="light"]) {
+            --bg: #121212;
+            --panel: #1e1e1e;
+            --hover: #2c2c2c;
+            --text: #e0e0e0;
+            --muted: #9e9e9e;
+            --border: #3c3c3c;
             --draw: #c8c8c8;
+            --icon-filter: invert(0.88);
+            color-scheme: dark;
         }
+    }
+    :root[data-theme="dark"] {
+        --bg: #121212;
+        --panel: #1e1e1e;
+        --hover: #2c2c2c;
+        --text: #e0e0e0;
+        --muted: #9e9e9e;
+        --border: #3c3c3c;
+        --draw: #c8c8c8;
+        --icon-filter: invert(0.88);
+        color-scheme: dark;
     }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
         font: 14px/1.4 system-ui, sans-serif; }
@@ -65,7 +84,48 @@
 
     .leaflet-control-layers, .leaflet-tooltip { background: var(--panel); color: var(--text);
         border-color: var(--border); }
+    .leaflet-bar { border-color: var(--border); }
+    .leaflet-bar a, .leaflet-bar a:hover { background: var(--panel); color: var(--text); border-bottom-color: var(--border); }
+    .leaflet-bar a:hover { background: var(--hover); }
+    .leaflet-tooltip-top:before { border-top-color: var(--panel); }
+    .leaflet-tooltip-bottom:before { border-bottom-color: var(--panel); }
+    .leaflet-tooltip-left:before { border-left-color: var(--panel); }
+    .leaflet-tooltip-right:before { border-right-color: var(--panel); }
+    .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
+    .leaflet-control-layers-separator { border-top-color: var(--border); }
+    .leaflet-pm-toolbar .button-container a.leaflet-buttons-control-button { background-color: var(--panel); }
+    .leaflet-pm-toolbar .button-container a.leaflet-buttons-control-button:hover { background-color: var(--hover); }
+    .leaflet-pm-toolbar .control-icon { filter: var(--icon-filter); }
 </style>
+<script>
+    // Follow Z-Wave JS UI's theme. It stores 'dark' | 'light' | 'system' in localStorage
+    // 'colorScheme' (older installs: 'dark' = 'true' | 'false') on this same origin.
+    // 'system' leaves data-theme unset so the prefers-color-scheme rule applies.
+    (function () {
+        function zuiTheme() {
+            try {
+                var s = localStorage.getItem('colorScheme')
+                if (s === 'dark' || s === 'light') return s
+                if (s === 'system') return null
+                var d = localStorage.getItem('dark')
+                return d === 'true' ? 'dark' : d === 'false' ? 'light' : null
+            } catch (e) { return null }
+        }
+        function apply() {
+            var t = zuiTheme()
+            if (t) document.documentElement.setAttribute('data-theme', t)
+            else document.documentElement.removeAttribute('data-theme')
+        }
+        apply()
+        // A theme change in a Z-Wave JS UI tab, or in the OS, restyles TopoSite live
+        window.addEventListener('storage', function (e) {
+            if (e.key === null || e.key === 'colorScheme' || e.key === 'dark') { apply(); window.dispatchEvent(new Event('ts-theme')) }
+        })
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+            window.dispatchEvent(new Event('ts-theme'))
+        })
+    })()
+</script>
 </head>
 <body>
 <div id="map"></div>

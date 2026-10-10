@@ -95,6 +95,13 @@ const panel = addPanel()
 addLegend()
 map.on('zoomend', applyLabelZoom)
 
+// Theme changed (index.html): drawn shapes take their colour when created, so rebuild them
+window.addEventListener('ts-theme', () => {
+    state.drawnJSON = ''
+    lastLayoutJSON = ''
+    reload()
+})
+
 let lastNodesJSON = ''
 let lastLayoutJSON = ''
 reload()

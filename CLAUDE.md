@@ -117,6 +117,11 @@ Checked in Z-Wave JS UI source 2026-10-06/09 and live on 11.24.2 2026-10-09 (`do
   (NodePanel → `getNodeNeighbors`) or `refreshNeighbors()` runs (whole mesh,
   turns RF off briefly, max once per 60 s). The 11.24 Network Graph draws
   LWR/NLWR only and has no refresh button. LWR/NLWR are always populated.
+- **Theme:** Z-Wave JS UI keeps its color scheme in localStorage `colorScheme`
+  (`dark` | `light` | `system`; older installs `dark` = `true` | `false`), same
+  origin as TopoSite. `public/index.html` reads it before first paint and sets
+  `data-theme`; `system` falls back to `prefers-color-scheme`. A `storage` event
+  restyles TopoSite live.
 - `refreshNeighbors`, `getNodeNeighbors` and `discoverNodeNeighbors` are in
   Z-Wave JS UI's socket.io `allowedApis`, which sits behind its own auth.
 - Node data: `zwave.getNodes()` → `ZUINode[]` with `neighbors`, `isListening`,
