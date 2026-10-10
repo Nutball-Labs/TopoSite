@@ -286,12 +286,21 @@ function hintOtherPlans(plan, placed) {
         `${elsewhere.map((p) => esc(p.name)).join(', ')}; pick it from the drop-down to see them.`)
 }
 
-/** Node menu (right-click): details, plus Unplace for placed nodes. Acts only on a click. */
+/**
+ * Node menu (right-click): actions only — details stay on the hover tooltip.
+ * Nothing changes until an item is clicked.
+ */
 function openNodeMenu(n, marker, plan, isPlaced) {
+    marker.closeTooltip()
+    const actions = []
+    if (plan && isPlaced && n.key) actions.push('<button type="button" data-act="unplace" title="Remove its saved position on this plan">Unplace</button>')
+    const hint = !plan ? 'Pick a plan to place nodes.'
+        : !n.key ? 'This node has no placement key yet.'
+            : !isPlaced ? 'Not placed — drag it onto the plan.' : ''
     const div = document.createElement('div')
     div.className = 'ts-menu'
-    div.innerHTML = `<div class="ts-menu-details">${nodeTooltip(n, plan, isPlaced)}</div>` +
-        (plan && isPlaced && n.key ? '<div class="ts-row"><button type="button" data-act="unplace">Unplace</button></div>' : '')
+    div.innerHTML = `<div class="ts-menu-title">${esc(nodeLabel(n))} <span class="muted">node ${n.id}</span></div>` +
+        (actions.length ? `<div class="ts-menu-actions">${actions.join('')}</div>` : `<div class="muted">${hint}</div>`)
     const popup = L.popup({ closeButton: true, autoClose: true, offset: [0, -10] })
         .setLatLng(marker.getLatLng())
         .setContent(div)

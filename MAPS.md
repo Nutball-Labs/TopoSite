@@ -92,8 +92,9 @@ The layout should feel like an app, not a debug page.
   dragged, and drawing tools are available when the background is a drawing.
 - **Node menu (right-click):** it never acts on its own (user, 2026-10-10:
   "way too easy"). It opens a menu, and nothing changes until an item is
-  clicked:
-  - **Details:** always shown.
+  clicked. It holds actions only: details stay on the hover tooltip, which
+  closes while the menu is open. A node with no actions available shows a
+  one-line hint (for example "drag it onto the plan").
   - **Unplace:** back to the tray; edit mode only.
   - **Hide on this map:** edit mode only.
   - **Link to… / Delete:** on placeholders; edit mode only.
