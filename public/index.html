@@ -124,6 +124,12 @@
         border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / 30%); }
     .ts-layers-pop label { display: block; white-space: nowrap; padding: 3px 0; cursor: pointer; }
     /* Placeholders: imported positions with no matched device */
+    /* Ghosts: repeaters on a shown route that aren't drawn as nodes (MAPS.md step 3) */
+    .ts-ghost circle { fill: #9e9e9e; stroke: var(--panel); stroke-width: 1.5; opacity: 0.85; }
+    .ts-ghost.ts-approx circle { fill: none; stroke: #9e9e9e; stroke-width: 2; stroke-dasharray: 2 2; }
+    .ts-ghost .lbl { top: 13px; font-size: 10px; color: var(--muted); }
+    .ts-gsw { width: 0.8em; height: 0.8em; border-radius: 50%; background: #9e9e9e; flex: none; margin: 0 0.1em; }
+    .ts-gsw-approx { background: none; border: 2px dashed #9e9e9e; box-sizing: border-box; }
     .ts-ph circle { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 3 3; }
 
     /* Import review screen */

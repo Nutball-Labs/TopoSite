@@ -2,7 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { autoLayout, buildLinks, nodeColor, routeSegments, rssiLabel, nodeLabel } from '../public/mesh-view.js'
+import { autoLayout, buildLinks, mapView, nodeColor, routeSegments, rssiLabel, nodeLabel } from '../public/mesh-view.js'
 
 // Shaped like /toposite/api/nodes output; values from a live 11.24.2 mesh (2026-10-09).
 const route = (repeaters, rssi, repeaterRSSI, rate, failedBetween = null) =>
@@ -65,6 +65,37 @@ test('auto-layout puts the controller in the center and every node on the plan',
     const dist = (id) => Math.hypot(pos.get(id)[0] - 500, pos.get(id)[1] - 500)
     assert.ok(dist(2) < dist(3) && dist(3) < dist(59), 'more hops = further out')
     assert.ok(dist(75) > dist(59), 'dead node on the outer ring')
+})
+
+test('map view: hidden repeaters on shown routes become ghosts; links and neighbors follow the shown set', () => {
+    // 59 routes 1 → 2 → 3 → 59. Show only 59 and the controller; 2 is placed on this map, 3 isn't.
+    const shown = new Set([1, 59])
+    const positioned = new Map([[1, [0, 0]], [2, [0, 100]], [59, [0, 400]], [75, [9, 9]]])
+    const v = mapView(NODES, shown, positioned)
+    const g = Object.fromEntries(v.ghosts.map((x) => [x.id, x]))
+    assert.deepEqual(Object.keys(g).map(Number).sort((a, b) => a - b), [2, 3], 'only route repeaters, not other hidden nodes')
+    assert.deepEqual([g[2].approx, g[2].pos], [false, [0, 100]], 'placed hidden repeater: exact')
+    assert.deepEqual([g[3].approx, g[3].pos], [true, [0, 250]], 'unplaced: midway between its route neighbors')
+    assert.equal(g[3].kind, 'lwr')
+    const kinds = v.links.map((l) => `${l.kind}:${l.a}-${l.b}`).sort()
+    assert.deepEqual(kinds, ['lwr:1-2', 'lwr:2-3', 'lwr:3-59'], "no neighbor lines to ghosts, no hidden nodes' routes")
+    assert.ok(!v.pos.has(75), 'hidden node off every shown route is not drawn')
+
+    // Shown but not placed (in the tray) and on a route: an approximate ghost, flagged shown
+    const v2 = mapView(NODES, new Set([1, 2, 3, 59]), new Map([[1, [0, 0]], [2, [0, 100]], [59, [0, 400]]]))
+    const g3 = v2.ghosts.find((x) => x.id === 3)
+    assert.deepEqual([g3.approx, g3.shown], [true, true])
+    assert.ok(v2.links.some((l) => l.kind === 'neighbor' && l.a === 2 && l.b === 1), 'neighbors between shown, positioned nodes')
+    assert.ok(!v2.links.some((l) => l.kind === 'neighbor' && (l.a === 3 || l.b === 3)), 'none to a node that is only a ghost')
+
+    // NLWR-only repeaters get kind 'nlwr' (hidden with the backup-routes layer)
+    const extra = [...NODES, node(80, { lwr: route([], -60, [], 3), nlwr: route([68], -70, [-71], 3) })]
+    const v3 = mapView(extra, new Set([1, 80]), new Map([[1, [0, 0]], [80, [0, 200]]]))
+    assert.deepEqual(v3.ghosts.map((x) => [x.id, x.kind, x.pos]), [[68, 'nlwr', [0, 100]]])
+
+    // Can't place a ghost with no positioned anchor on one side: its segments are skipped
+    const v4 = mapView(NODES, new Set([59]), new Map([[59, [0, 400]]]))
+    assert.deepEqual([v4.ghosts.length, v4.links.length], [0, 0])
 })
 
 // SN: 00001

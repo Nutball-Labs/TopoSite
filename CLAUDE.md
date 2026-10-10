@@ -58,7 +58,7 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | `lib/exchange.js` | Map export/import: file format, validation, match proposals (`matchScore`, `proposeMatches`) |
 | `lib/layout.js` | Data model v2 (MAPS.md): settings, background library (image + optional dark variant; files never shared, forked on change, unused ones collected), maps with nested positions (identity snapshots; placeholders) (`<store>/toposite/layout.json`, images in `<store>/toposite/images/`); version 2 only (the v1 migration was removed 2026-10-10); PNG/JPEG/WebP sniffing (no SVG), 25 MB cap, serialized atomic writes |
 | `lib/store.js` | Store dir resolution (`TOPOSITE_STORE_DIR` → `STORE_DIR` → `<cwd>/store` → two dirs above the plugin; must contain `settings.json`), atomic JSON writes |
-| `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic, tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4 — no SN, skipped by sn_audit) |
+| `public/` | Map page: `index.html`, `app.js` (Leaflet + refresh button), `mesh-view.js` (pure colors/layout/route logic and `mapView()` — what a map draws: shown routes, ghost repeaters; tested in Node), `vendor/` (Leaflet 1.9.4, socket.io-client 4.8.4 — no SN, skipped by sn_audit) |
 | `test/` | `node:test` unit tests, run with a fake plugin context |
 | `ROADMAP.md` | Zoom levels (satellite → floor plan → room panorama), data model, phases |
 | `MAPS.md` | **Product definition (2026-10-09):** maps, reusable backgrounds, per-map positions and node lists, built-in Network Graph, data model v2, build order. Read before changing the UI or `layout.json` |
@@ -324,7 +324,7 @@ must not clash with the meanings above.
 
 See `ROADMAP.md` for detail.
 
-- **Phase 1 (floor-plan map, Z-Wave):** In progress — map page, backgrounds, placement, export/import; MAPS.md steps 1 (data model v2) and 2 (maps UI) done, step 3 (rendering rules) next
+- **Phase 1 (floor-plan map, Z-Wave):** In progress — map page, backgrounds, placement, export/import; MAPS.md steps 1–3 (data model v2, maps UI, rendering rules) done
 - **Phase 2 (room panoramas):** Designed
 - **Phase 3 (satellite view):** Designed
 - **Later (Zigbee and IP layers):** Deferred

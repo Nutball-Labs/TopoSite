@@ -240,7 +240,11 @@ reads version 2 only and refuses any other `layout.json` without touching it.
    remembered). Quick selects replace the shown set; switching the starting
    rule keeps what's shown. Edit mode starts off on each visit. Saving the view
    (zoom, centre, layers) per map is not built yet.
-3. **Rendering rules**: filtering, ghost repeaters, link rules.
+3. **Rendering rules**: filtering, ghost repeaters, link rules. *Done 2026-10-10* (`mapView()` in
+   `public/mesh-view.js`). As built: only shown nodes' routes are drawn; a shown
+   repeater still in the tray is drawn as an approximate ghost too; ghosts on
+   backup routes live in the backup-routes layer; a ghost with no positioned
+   node on one side of it can't be placed, so those segments are skipped.
 4. **Network Graph**: live layout as the built-in default.
 5. **Background library**: reuse, replace with keep/clear positions,
    delete-if-unused.

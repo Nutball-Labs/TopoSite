@@ -21,7 +21,7 @@
 // the radio briefly paused.
 
 import {
-    autoLayout, buildLinks, nodeColor, nodeLabel, mainRoute, rateColor, rateLabel,
+    autoLayout, mapView, nodeColor, nodeLabel, mainRoute, rateColor, rateLabel,
     rssiLabel, HOP_LEGEND, RATE_LEGEND,
 } from './mesh-view.js'
 
@@ -187,36 +187,42 @@ async function draw() {
     for (const p of plan?.placements ?? []) {
         if (p.deviceKey) placed.set(p.deviceKey, [height - p.y, p.x])
     }
-    const pos = new Map()
+    // `positioned` = every node with a spot on this map, shown or not (hidden ones
+    // can still appear as ghost repeaters on a shown node's route)
+    const positioned = new Map()
     const unplaced = []
     if (plan) {
-        for (const n of shown) {
+        for (const n of state.nodes) {
             const saved = n.key && placed.get(n.key)
-            if (saved) pos.set(n.id, saved)
-            else unplaced.push(n)
+            if (saved) positioned.set(n.id, saved)
+            else if (isShown(cur, n)) unplaced.push(n)
         }
     } else {
         const side = Math.min(width, height) * 0.9
         const auto = autoLayout(shown, side)
         for (const n of shown) {
             const [y, x] = auto.get(n.id) ?? [side / 2, side / 2]
-            pos.set(n.id, [y + (height - side) / 2, x + (width - side) / 2])
+            positioned.set(n.id, [y + (height - side) / 2, x + (width - side) / 2])
         }
     }
+    const view = mapView(state.nodes, new Set(shown.map((n) => n.id)), positioned)
+    const ghostIds = new Set(view.ghosts.map((g) => g.id))
+    const nodePos = new Map([...view.pos].filter(([id]) => !ghostIds.has(id)))
 
-    drawLinks(pos)
+    drawLinks(view.links, view.pos)
+    drawGhosts(view.ghosts)
     hintPlacing(plan, placed, unplaced)
-    drawNodes(pos, plan, height)
+    drawNodes(nodePos, plan, height)
     drawPlaceholders(plan, height)
     panel.setEdit(cur, unplaced)
 }
 
-function drawLinks(pos) {
+function drawLinks(links, pos) {
     for (const g of [layers.routes, layers.nlwr, layers.neighbors]) g.clearLayers()
     const byId = new Map(state.nodes.map((n) => [n.id, n]))
     const name = (id) => esc(byId.get(id)?.name ?? `NodeID ${id}`)
 
-    for (const l of buildLinks(state.nodes)) {
+    for (const l of links) {
         const a = pos.get(l.a)
         const b = pos.get(l.b)
         if (!a || !b) continue
@@ -266,6 +272,33 @@ function drawNodes(pos, plan, height) {
                 placeNode(plan, n, lng, height - lat)
             })
         }
+    }
+}
+
+/**
+ * Ghosts: nodes on a shown node's route that aren't drawn as nodes here — hidden
+ * repeaters, or shown ones not placed yet. Small grey dots (dashed ring when the
+ * spot is approximate), in the same layer as the route they belong to.
+ */
+function drawGhosts(ghosts) {
+    const byId = new Map(state.nodes.map((n) => [n.id, n]))
+    for (const g of ghosts) {
+        const n = byId.get(g.id)
+        const label = n ? nodeLabel(n) : `NodeID ${g.id}`
+        const why = g.shown ? 'Not placed on this map yet' : 'Hidden on this map'
+        const where = g.approx ? 'drawn midway between its route neighbors (approximate spot)' : 'shown at its spot on this map'
+        L.marker(g.pos, {
+            keyboard: false,
+            icon: L.divIcon({
+                className: `ts-node ts-ghost${g.approx ? ' ts-approx' : ''}`,
+                iconSize: [12, 12],
+                iconAnchor: [6, 6],
+                html: `<svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5"/></svg><span class="lbl">${esc(label)}</span>`,
+            }),
+        })
+            .bindTooltip(`<b>${esc(label)}</b> (node ${g.id})<br>${why} — it repeats for a shown node's ${g.kind === 'lwr' ? 'route' : 'backup route'},` +
+                ` so it's ${where}.`, { direction: 'top', offset: [0, -8] })
+            .addTo(g.kind === 'lwr' ? layers.routes : layers.nlwr)
     }
 }
 
@@ -1279,6 +1312,8 @@ function addLegend() {
                 <h2>Node color = hops</h2>${HOP_LEGEND.map(([t, c]) => `<div><span class="sw" style="background:${c}"></span>${t}</div>`).join('')}
                 <h2>Link color = data rate</h2>${RATE_LEGEND.map(([t, c]) => `<div><span class="ln" style="border-color:${c}"></span>${t}</div>`).join('')}
                 <div><span class="ln" style="border-top-style:dashed;border-color:#888"></span>backup route</div>
+                <div><span class="ts-gsw"></span>repeater hidden or not placed on this map</div>
+                <div><span class="ts-gsw ts-gsw-approx"></span>…at an approximate spot</div>
                 </div>`
             const btn = div.querySelector('.ts-legend-toggle')
             const body = div.querySelector('#ts-legend-body')

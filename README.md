@@ -95,7 +95,9 @@ its left edge to resize) has:
 - **Legend**: shows or hides the legend.
 
 On the map: **Layers…** (top right) toggles routes, backup routes, neighbors
-and nodes. Positions are saved in Z-Wave JS UI's store, so they're kept with
+and nodes. Nodes hidden on a map aren't drawn, but if one repeats for a shown
+node's route it appears as a small grey dot so the route stays traceable
+(a dashed ring means its spot is approximate — it has no position on this map). Positions are saved in Z-Wave JS UI's store, so they're kept with
 its backups.
 
 If Z-Wave JS UI's login is turned on, TopoSite requires the same login: log in
@@ -108,8 +110,8 @@ to Z-Wave JS UI in the same browser first.
 **v0.1.0 — early development.** Map page at `/toposite/` with the built-in
 Network Graph and your own maps: backgrounds (light and dark), dragging nodes
 into place, export/import, neighbor refresh. Each map has its own node
-list, a default map opens on load, and changes happen in edit mode. Next: ghost
-repeaters for hidden nodes and the live Network Graph layout (see `MAPS.md`).
+list, a default map opens on load, and changes happen in edit mode. Hidden repeaters on shown
+routes appear as ghosts. Next: the live Network Graph layout (see `MAPS.md`).
 
 ---
 

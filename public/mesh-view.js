@@ -159,4 +159,82 @@ export function buildLinks(nodes) {
     return [...links.values()]
 }
 
+/**
+ * What a map draws (MAPS.md "Rendering rules"), given which nodes are shown and
+ * where nodes sit on this map:
+ *   - routes of shown nodes only (LWR; NLWR as kind 'nlwr', or 'lwr' when there
+ *     is no LWR — same as buildLinks), plus their failed hops
+ *   - neighbor lines only between shown, positioned nodes
+ *   - ghosts: nodes on a shown node's route that aren't drawn as nodes — hidden
+ *     repeaters (and a hidden controller), or shown ones with no position yet.
+ *     A ghost sits at its position on this map when it has one; otherwise
+ *     midway between its nearest positioned neighbors on the route, flagged
+ *     `approx`. Ghost kind is 'lwr' if it's on any LWR-kind route, else 'nlwr'
+ *     (so it can be hidden with the backup-routes layer).
+ * shown: Set of node ids; positioned: Map(id → [y, x]) of every node with a
+ * position on this map (shown or not).
+ * Returns {links, ghosts: [{id, kind, pos, approx, shown}], pos: Map(id → [y, x])}
+ * where pos covers shown positioned nodes and ghosts.
+ */
+export function mapView(nodes, shown, positioned) {
+    const controller = nodes.find((n) => n.role === 'controller')
+    const cid = controller?.id ?? 1
+    const ids = new Set(nodes.map((n) => n.id))
+    const pos = new Map()
+    for (const [id, p] of positioned) if (shown.has(id)) pos.set(id, p)
+    const ghosts = new Map()
+
+    const paths = []
+    for (const n of nodes) {
+        if (!shown.has(n.id)) continue
+        for (const [kind, route] of [['lwr', n.lwr], [n.lwr ? 'nlwr' : 'lwr', n.nlwr]]) {
+            if (route) paths.push({ kind, n, route, path: [cid, ...(route.repeaters ?? []), n.id].filter((id) => ids.has(id)) })
+        }
+    }
+    paths.sort((a, b) => (a.kind === 'lwr' ? 0 : 1) - (b.kind === 'lwr' ? 0 : 1))
+    for (const { kind, path } of paths) {
+        // Exact ghosts first: hidden nodes on the route that have a position here
+        for (const id of path) {
+            if (pos.has(id) || shown.has(id) || !positioned.has(id)) continue
+            pos.set(id, positioned.get(id))
+            ghosts.set(id, { id, kind, pos: positioned.get(id), approx: false, shown: false })
+        }
+        // Then anything still without a position: interpolate along the route
+        for (let i = 0; i < path.length; i++) {
+            const id = path[i]
+            if (pos.has(id)) continue
+            let j = i - 1
+            while (j >= 0 && !pos.has(path[j])) j--
+            let k = i + 1
+            while (k < path.length && !pos.has(path[k])) k++
+            if (j < 0 || k >= path.length) continue
+            const [a, b] = [pos.get(path[j]), pos.get(path[k])]
+            const t = (i - j) / (k - j)
+            const p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+            pos.set(id, p)
+            ghosts.set(id, { id, kind, pos: p, approx: true, shown: shown.has(id) })
+        }
+    }
+
+    const links = new Map()
+    const add = (kind, a, b, extra = {}) => {
+        if (!pos.has(a) || !pos.has(b) || a === b) return
+        const key = `${kind}:${Math.min(a, b)}-${Math.max(a, b)}`
+        const l = links.get(key) ?? { kind, a, b, rssi: null, rate: null, routes: [] }
+        if (l.rssi === null && extra.rssi !== undefined) l.rssi = extra.rssi
+        if (l.rate === null && extra.rate !== undefined) l.rate = extra.rate
+        if (extra.route !== undefined && !l.routes.includes(extra.route)) l.routes.push(extra.route)
+        links.set(key, l)
+    }
+    for (const { kind, n, route } of paths) {
+        for (const s of routeSegments(n, route, cid)) add(kind, s.from, s.to, { rssi: s.rssi, rate: s.rate, route: n.id })
+        if (route.failedBetween) add('failed', route.failedBetween[0], route.failedBetween[1], { route: n.id })
+    }
+    for (const n of nodes) {
+        if (!shown.has(n.id) || ghosts.has(n.id)) continue
+        for (const nb of n.neighbors ?? []) if (shown.has(nb) && !ghosts.has(nb)) add('neighbor', n.id, nb)
+    }
+    return { links: [...links.values()], ghosts: [...ghosts.values()], pos }
+}
+
 // SN: 00001
