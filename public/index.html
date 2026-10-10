@@ -37,6 +37,8 @@
         --border: #3c3c3c;
         color-scheme: dark;
     }
+    /* hidden always hides, whatever display a class rule sets */
+    [hidden] { display: none !important; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
         font: 14px/1.4 system-ui, sans-serif; }
     /* Map on the left, resizable controls pane on the right */
@@ -68,16 +70,17 @@
     #ts-status a { color: inherit; }
 
     .ts-legend { font-size: 0.9em; }
-    .ts-legend div { display: flex; align-items: center; gap: 0.5em; }
+    .ts-legend #ts-legend-body > div { display: flex; align-items: center; gap: 0.5em; }
     .ts-legend .sw { width: 1em; height: 1em; border-radius: 0.15em; flex: none; }
     .ts-legend .ln { width: 1.5em; height: 0; border-top: 0.25em solid; flex: none; }
     .ts-legend h2 { font-size: 1em; margin: 0.5em 0 0.15em; }
-    .ts-legend-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between;
-        font: 600 1.1em/1.2 system-ui, sans-serif; color: var(--text); background: none; border: none;
-        padding: 0; cursor: pointer; }
-    .ts-legend-toggle .ts-arrow { font-size: 1.8em; line-height: 1; color: var(--muted); }
-    .ts-legend-toggle:hover .ts-arrow, .ts-legend-toggle:focus-visible .ts-arrow { color: var(--text); }
-    #ts-legend-body { margin-top: 0.3em; }
+    /* Full-width button with centred text; toggles the legend (user, 2026-10-10) */
+    .ts-legend-toggle { display: block; width: 100%; text-align: center; font: 600 1.1em/1.2 system-ui, sans-serif;
+        color: var(--text); background: var(--hover); border: 1px solid var(--border); border-radius: 0.35em;
+        padding: 0.5em; cursor: pointer; }
+    .ts-legend-toggle:hover { border-color: var(--muted); }
+    .ts-legend-toggle[aria-expanded="true"] { background: var(--panel); }
+    #ts-legend-body { margin-top: 0.5em; }
 
     .ts-node { overflow: visible; }
     .ts-node svg { overflow: visible; }

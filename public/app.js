@@ -709,8 +709,8 @@ function addLegend() {
             const shapes = [['★', 'Controller'], ['⬢', 'Mains (repeats)'], ['■', 'Battery (sleeps)']]
             // Collapsed by default (user, 2026-10-10); the choice is remembered per browser
             const open = readPref(LEGEND_KEY) === 'open'
-            div.innerHTML = `<button type="button" class="ts-legend-toggle" aria-expanded="${open}" aria-controls="ts-legend-body">
-                    <span>Legend</span><span class="ts-arrow" aria-hidden="true">${open ? '▲' : '▼'}</span></button>
+            div.innerHTML = `<button type="button" class="ts-legend-toggle" aria-expanded="${open}" aria-controls="ts-legend-body"
+                    title="Show or hide the legend">Legend</button>
                 <div id="ts-legend-body"${open ? '' : ' hidden'}>
                 <h2>Shape</h2>${shapes.map(([s, t]) => `<div><span>${s}</span>${t}</div>`).join('')}
                 <h2>Node color = hops</h2>${HOP_LEGEND.map(([t, c]) => `<div><span class="sw" style="background:${c}"></span>${t}</div>`).join('')}
@@ -724,7 +724,6 @@ function addLegend() {
                 const nowOpen = body.hidden
                 body.hidden = !nowOpen
                 btn.setAttribute('aria-expanded', nowOpen)
-                btn.querySelector('.ts-arrow').textContent = nowOpen ? '▲' : '▼'
                 writePref(LEGEND_KEY, nowOpen ? 'open' : 'closed')
             })
             return div
