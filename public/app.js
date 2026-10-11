@@ -333,7 +333,7 @@ function drawGhosts(ghosts) {
                 className: `ts-node ts-ghost${g.approx ? ' ts-approx' : ''}`,
                 iconSize: [12, 12],
                 iconAnchor: [6, 6],
-                html: `<svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5"/></svg><span class="lbl">${esc(label)}</span>`,
+                html: `<svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.5"/></svg><span class="lbl"><span>${esc(label)}</span></span>`,
             }),
         })
             .bindTooltip(`<b>${esc(label)}</b> (node ${g.id})<br>${why} — it repeats for a shown node's ${g.kind === 'lwr' ? 'route' : 'backup route'},` +
@@ -471,7 +471,7 @@ function drawPlaceholders(plan, height) {
                 iconSize: [24, 24],
                 iconAnchor: [12, 12],
                 html: '<svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /></svg>' +
-                    `<span class="lbl">${esc(label)}</span>`,
+                    `<span class="lbl"><span>${esc(label)}</span></span>`,
             }),
         })
             .bindTooltip(`<b>${esc(label)}</b><br>${[ph.placeholder.loc, ph.placeholder.productLabel ?? ph.placeholder.deviceId]
@@ -601,7 +601,7 @@ function nodeIcon(n) {
         className: 'ts-node',
         iconSize: [24, 24],
         iconAnchor: [12, 12],
-        html: `<svg width="24" height="24" viewBox="0 0 24 24">${shape}</svg><span class="lbl">${esc(nodeLabel(n))}</span>`,
+        html: `<svg width="24" height="24" viewBox="0 0 24 24">${shape}</svg><span class="lbl"><span>${esc(nodeLabel(n))}</span></span>`,
     })
 }
 

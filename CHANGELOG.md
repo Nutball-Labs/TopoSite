@@ -5,6 +5,8 @@
 - TopoSite logo: README header (light/dark), browser-tab icon
 - Node names layer: show or hide node name labels (previously they appeared
   only when zoomed in); saved per map
+- Node names are drawn as small tags in the panel colour, so they stay sharp
+  and readable over any background (were blurry outlined text)
 
 ## 0.2.0 — 2026-10-10 (first public release)
 
