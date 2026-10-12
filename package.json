@@ -4,7 +4,7 @@
   "description": "Z-Wave JS UI plugin: place Z-Wave nodes on a floor plan and show mesh links and health",
   "type": "module",
   "main": "index.js",
-  "license": "GPL-3.0-or-later",
+  "license": "MIT",
   "author": "Nutball Labs",
   "homepage": "https://github.com/Nutball-Labs/TopoSite#readme",
   "repository": "github:Nutball-Labs/TopoSite",

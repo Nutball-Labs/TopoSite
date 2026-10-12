@@ -232,7 +232,7 @@ SNs, bump version, commit, and push.
   −95 dBm), dotted amber lines for one-way neighbor entries, and a pane list.
   Styling and thresholds get tuned after the user reviews it on the real mesh.
 - **Node icons show power source**, following Z-Wave JS UI's visual language below.
-- **License:** GPLv3 (plugin is a separate package; Z-Wave JS UI is MIT).
+- **License:** MIT, same as Z-Wave JS UI (switched from GPLv3 2026-10-12 so the code can be ported upstream, #4854).
 
 ### Z-Wave visual language (from Z-Wave JS UI)
 

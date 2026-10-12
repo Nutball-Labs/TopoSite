@@ -5,6 +5,7 @@
 - TopoSite logo: README header (light/dark), browser-tab icon
 - Node names layer: show or hide node name labels (previously they appeared
   only when zoomed in); saved per map
+- License changed from GPLv3 to MIT (same as Z-Wave JS UI)
 - Node names are drawn as small tags in the panel colour, so they stay sharp
   and readable over any background (were blurry outlined text)
 

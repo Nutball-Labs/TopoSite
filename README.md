@@ -241,7 +241,7 @@ feature decisions, and real-world testing are entirely human-driven.
 
 ## License
 
-GNU General Public License v3 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE), the same license as Z-Wave JS UI.
 Copyright (C) 2026 Nutball Labs / Stephen Berg
 
 <!-- SN: 00002 -->
