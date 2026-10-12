@@ -63,6 +63,7 @@ Plain descriptive name — not the creature-pun style of the Nutball-Labs apps
 | `ROADMAP.md` | Zoom levels (satellite → floor plan → room panorama), data model, phases |
 | `MAPS.md` | **Product definition (2026-10-09):** maps, reusable backgrounds, per-map positions and node lists, built-in Network Graph, data model v2, build order. Read before changing the UI or `layout.json` |
 | `scripts/sn_audit.sh` | Regenerates `sn_audit.txt` |
+| `scripts/gen_nav_icon.py` | Writes `images/nav-icon.svg`: 24 px sidebar icon in Z-Wave JS UI's Material Icons style (room + star + nodes); prints the path for an `svg:` Vuetify icon string (upstream port nav entry) |
 | `scripts/gen_line_count.sh` | Daily line-count snapshot → `Line_Counts/` |
 
 ### Plugin API (current)
